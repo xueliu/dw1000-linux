@@ -1,0 +1,52 @@
+/dts-v1/;
+/plugin/;
+
+/* Overlay for decaWave DW1000 IEEE 802.15.4 WPAN transceiver on spi0.0 */
+
+/ {
+	compatible = "brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2708", "brcm,bcm2709";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			status = "okay";
+
+			dw1000: dw1000@0 {
+				compatible = "decawave,dw1000";
+				reg = <0>;
+				interrupt-parent = <&gpio>;
+				interrupts = <17 4>; // IRQF_TRIGGER_HIGH
+				rstn-gpio = <&gpio 27 1>;
+				spi-max-frequency = <4000000>;
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spidev0>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@2 {
+		target = <&gpio>;
+		__overlay__ {
+			dw1000_pins: dw1000_pins {
+				brcm,pins = <17 27>;
+				brcm,function = <0 1>; /* in out */
+			};
+		};
+	};
+
+	__overrides__ {
+		interrupt = <&dw1000>, "interrupts:0",
+			<&dw1000_pins>, "brcm,pins:0";
+		reset     = <&dw1000>, "rstn-gpio:4",
+			<&dw1000_pins>, "brcm,pins:4";
+		speed     = <&dw1000>, "spi-max-frequency:0";
+	};
+};
