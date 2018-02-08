@@ -34,7 +34,16 @@
 #include "dw1000.h"
 
 #define printdev(X) (&X->spi->dev)
+
 #define	SPI_COMMAND_BUFFER	5
+
+#define REG_READ(x)	(x)
+#define REG_WRITE(x)	BIT(8)
+#define ADDR_EXT	BIT(8)
+#define	SUB_INDEX	BIT(6)
+
+#define DW1000_REG_READ(x)	(x)
+#define DW1000_REG_WRITE(x)	(REG_WRITE | (x))
 
 struct dw1000_local {
 	struct spi_device *spi;
@@ -53,6 +62,19 @@ struct dw1000_local {
 	bool is_tx_from_off;
 	u8 tx_retry;
 	struct sk_buff *tx_skb;
+};
+
+/* DW1000 operational states */
+enum {
+	STATE_OFF	= 0x00,
+	STATE_WAKEUP	= 0x01,
+	STATE_INIT	= 0x02,
+	STATE_IDLE	= 0x03,
+	STATE_SLEEP	= 0x04,
+	STATE_DEEPSLEEP	= 0x05,
+	STATE_TX	= 0x06,
+	STATE_RX	= 0x07,
+	STATE_SNOOZE	= 0x08,
 };
 
 //static bool
