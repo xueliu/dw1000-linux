@@ -56,5 +56,5 @@
 #define RG_DIG_DIAG	0x2F
 #define RG_PMSC		0x36
 
-#endif /* _MCR20A_H */
+#endif /* _DW1000_H */
 

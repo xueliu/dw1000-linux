@@ -77,48 +77,82 @@ enum {
 	STATE_SNOOZE	= 0x08,
 };
 
-//static bool
-//dw1000_reg_writeable(struct device *dev, unsigned int reg)
-//{
-//	switch (reg) {
-//	case RG_EUI:
-//		return true;
-//	default:
-//		return false;
-//	}
-//}
-//
-//static bool
-//dw1000_reg_readable(struct device *dev, unsigned int reg)
-//{
-//	bool rc;
-//
-//	/* all writeable are also readable */
-//	rc = dw1000_reg_writeable(dev, reg);
-//	if (rc)
-//		return rc;
-//
-//	/* readonly regs */
-//	switch (reg) {
-//	case RG_DEV_ID:
-//		return true;
-//	default:
-//		return false;
-//	}
-//}
+// static bool
+// dw1000_reg_writeable(struct device *dev, unsigned int reg)
+// {
+// 	switch (reg) {
+// 	case RG_EUI:
+// 		return true;
+// 	default:
+// 		return false;
+// 	}
+// }
 
-//static const struct regmap_config dw1000_regmap_spi_config = {
-//	.reg_bits = 8,
-//	.val_bits = 8,
-//	.write_flag_mask = CMD_REG | CMD_WRITE,
-//	.read_flag_mask = CMD_REG,
-//	.cache_type = REGCACHE_RBTREE,
-//	.max_register = AT86RF2XX_NUMREGS,
-//	.writeable_reg = dw1000_reg_writeable,
-//	.readable_reg = dw1000_reg_readable,
-//	.volatile_reg = dw1000_reg_volatile,
-//	.precious_reg = dw1000_reg_precious,
-//};
+// static bool
+// dw1000_reg_readable(struct device *dev, unsigned int reg)
+// {
+// 	bool rc;
+
+// 	/* all writeable are also readable */
+// 	rc = dw1000_reg_writeable(dev, reg);
+// 	if (rc)
+// 		return rc;
+
+// 	/* readonly regs */
+// 	switch (reg) {
+// 	case RG_DEV_ID:
+// 		return true;
+// 	default:
+// 		return false;
+// 	}
+// }
+
+// static const struct regmap_config dw1000_regmap_spi_config = {
+// 	.reg_bits = 8,
+// 	.val_bits = 8,
+// 	.write_flag_mask = CMD_REG | CMD_WRITE,
+// 	.read_flag_mask = CMD_REG,
+// 	.cache_type = REGCACHE_RBTREE,
+// 	.max_register = AT86RF2XX_NUMREGS,
+// 	.writeable_reg = dw1000_reg_writeable,
+// 	.readable_reg = dw1000_reg_readable,
+// 	.volatile_reg = dw1000_reg_volatile,
+// 	.precious_reg = dw1000_reg_precious,
+// };
+
+static int
+dw1000_regmap_write(void *context, const void *data,
+			       size_t count)
+{
+	struct spi_device *spi = context;
+	u8 buf[3];
+
+	if (count > 3)
+		return -EINVAL;
+
+	memcpy(buf, data, count);
+	buf[1] |= (1 << 4);
+
+	return spi_write(spi, buf, count);
+}
+
+static int
+dw1000_regmap_read(void *context, const void *reg, size_t reg_size,
+		   void *val, size_t val_size)
+{
+	struct spi_device *spi = context;
+
+	return spi_write_then_read(spi, reg, reg_size, val, val_size);
+}
+
+
+static const struct regmap_bus dw1000_regmap_bus = {
+	.write = dw1000_regmap_write,
+	.read = dw1000_regmap_read,
+	.reg_format_endian_default = REGMAP_ENDIAN_BIG,
+	.val_format_endian_default = REGMAP_ENDIAN_BIG,
+};
+
 
 
 static irqreturn_t dw1000_isr(int irq, void *data)
