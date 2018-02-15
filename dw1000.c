@@ -548,6 +548,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 		lp->hw->flags |= IEEE802154_HW_LBT;
 		lp->hw->phy->supported.channels[4] = 0x1e;
 		lp->hw->phy->current_channel = 1;
+		lp->hw->phy->current_page = 4;
 		lp->hw->phy->symbol_duration = 25;
 		lp->hw->phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
 		lp->hw->phy->supported.tx_powers = dw1000_powers;
