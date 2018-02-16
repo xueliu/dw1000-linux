@@ -500,7 +500,6 @@ dw1000_detect_device(struct dw1000_local *lp)
 		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
 
 	lp->hw->phy->cca.mode = NL802154_CCA_ENERGY;
-:
 		chip = "dw1000";
 //		lp->data = &at86rf212_data;
 		lp->hw->flags |= IEEE802154_HW_LBT;
