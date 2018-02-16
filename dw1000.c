@@ -485,31 +485,6 @@ dw1000_detect_device(struct dw1000_local *lp)
 	dev_dbg(&lp->spi->dev, "return data data[2] = %02x\n", data[2]);
 	dev_dbg(&lp->spi->dev, "return data data[3] = %02x\n", data[3]);
 
-
-//	rc = __dw1000_read(lp, RG_MAN_ID_0, &val);
-//	if (rc)
-//		return rc;
-//	man_id |= val;
-//
-//	rc = __dw1000_read(lp, RG_MAN_ID_1, &val);
-//	if (rc)
-//		return rc;
-//	man_id |= (val << 8);
-//
-//	rc = __dw1000_read(lp, RG_PART_NUM, &part);
-//	if (rc)
-//		return rc;
-//
-//	rc = __dw1000_read(lp, RG_VERSION_NUM, &version);
-//	if (rc)
-//		return rc;
-//
-//	if (man_id != 0x001f) {
-//		dev_err(&lp->spi->dev, "Non-Atmel dev found (MAN_ID %02x %02x)\n",
-//			man_id >> 8, man_id & 0xFF);
-//		return -EINVAL;
-//	}
-
 	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM |
 			IEEE802154_HW_CSMA_PARAMS |
 			IEEE802154_HW_FRAME_RETRIES | IEEE802154_HW_AFILT |
@@ -525,24 +500,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
 
 	lp->hw->phy->cca.mode = NL802154_CCA_ENERGY;
-
-//	switch (part) {
-//	case 2:
-//		chip = "dw1000";
-//		rc = -ENOTSUPP;
-//		goto not_supp;
-//	case 3:
-//		chip = "at86rf231";
-//		lp->data = &at86rf231_data;
-//		lp->hw->phy->supported.channels[0] = 0x7FFF800;
-//		lp->hw->phy->current_channel = 11;
-//		lp->hw->phy->symbol_duration = 16;
-//		lp->hw->phy->supported.tx_powers = at86rf231_powers;
-//		lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(at86rf231_powers);
-//		lp->hw->phy->supported.cca_ed_levels = at86rf231_ed_levels;
-//		lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(at86rf231_ed_levels);
-//		break;
-//	case 7:
+:
 		chip = "dw1000";
 //		lp->data = &at86rf212_data;
 		lp->hw->flags |= IEEE802154_HW_LBT;
@@ -555,23 +513,6 @@ dw1000_detect_device(struct dw1000_local *lp)
 		lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
 		lp->hw->phy->supported.cca_ed_levels = dw1000_ed_levels;
 		lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
-//		break;
-//	case 11:
-//		chip = "at86rf233";
-//		lp->data = &at86rf233_data;
-//		lp->hw->phy->supported.channels[0] = 0x7FFF800;
-//		lp->hw->phy->current_channel = 13;
-//		lp->hw->phy->symbol_duration = 16;
-//		lp->hw->phy->supported.tx_powers = at86rf233_powers;
-//		lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(at86rf233_powers);
-//		lp->hw->phy->supported.cca_ed_levels = at86rf233_ed_levels;
-//		lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(at86rf233_ed_levels);
-//		break;
-//	default:
-//		chip = "unknown";
-//		rc = -ENOTSUPP;
-//		goto not_supp;
-//	}
 
 	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
 	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
