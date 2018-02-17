@@ -200,27 +200,6 @@ static const s32 dw1000_ed_levels[DW1000_MAX_ED_LEVELS + 1] = {
 static inline int
 dw1000_update_cca_ed_level(struct dw1000_local *lp, int rssi_base_val)
 {
-//	unsigned int cca_ed_thres;
-//	int rc;
-//
-//	rc = dw1000_read_subreg(lp, SR_CCA_ED_THRES, &cca_ed_thres);
-//	if (rc < 0)
-//		return rc;
-//
-//	switch (rssi_base_val) {
-//	case -98:
-//		lp->hw->phy->supported.cca_ed_levels = at86rf212_ed_levels_98;
-//		lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(at86rf212_ed_levels_98);
-//		lp->hw->phy->cca_ed_level = at86rf212_ed_levels_98[cca_ed_thres];
-//		break;
-//	case -100:
-//		lp->hw->phy->supported.cca_ed_levels = at86rf212_ed_levels_100;
-//		lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(at86rf212_ed_levels_100);
-//		lp->hw->phy->cca_ed_level = at86rf212_ed_levels_100[cca_ed_thres];
-//		break;
-//	default:
-//		WARN_ON(1);
-//	}
 
 	return 0;
 }
