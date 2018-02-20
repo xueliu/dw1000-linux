@@ -153,7 +153,52 @@ static const struct regmap_bus dw1000_regmap_bus = {
 	.val_format_endian_default = REGMAP_ENDIAN_BIG,
 };
 
+static inline void
+dw1000_sleep(struct dw1000_local *lp)
+{
 
+}
+
+static inline void
+dw1000_awake(struct dw1000_local *lp)
+{
+
+}
+
+static inline int
+dw1000_read_subreg(struct dw1000_local *lp, unsigned int len,
+	unsigned int addr, unsigned int mask,
+	unsigned int shift, unsigned int *data)
+{
+	int rc;
+
+	rc = __dw1000_read(lp, addr, data);
+	if (!rc)
+		*data = (*data & mask) >> shift;
+
+	return rc;
+}
+
+static inline int
+dw1000_write_subreg(struct at86rf230_local *lp,
+	unsigned int addr, unsigned int mask,
+	unsigned int shift, unsigned int data)
+{
+	bool sleep = lp->sleep;
+	int ret;
+
+	/* awake for register setting if sleep */
+	if (sleep)
+		dw1000_awake(lp);
+
+	ret = regmap_update_bits(lp->regmap, addr, mask, data << shift);
+
+	/* sleep again if was sleeping */
+	if (sleep)
+		at86rf230_sleep(lp);
+
+	return ret;
+}
 
 static irqreturn_t dw1000_isr(int irq, void *data)
 {
