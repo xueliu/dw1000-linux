@@ -17,6 +17,8 @@
 #define _DW1000_H
 
 #define RG_DEV_ID	0x00
+#define SG_REV			RG_DEV_ID, 1, 0x0f, 0
+#define SG_VER			RG_DEV_ID, 1, 0xf0, 4
 #define RG_EUI		0x01
 #define RG_PANADR	0x03
 #define RG_SYS_CFG	0x04
