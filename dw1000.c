@@ -38,8 +38,8 @@
 #define	SPI_COMMAND_BUFFER	5
 
 #define REG_READ(x)	(x)
-#define REG_WRITE(x)	BIT(8)
-#define ADDR_EXT	BIT(8)
+#define REG_WRITE(x)	BIT(7)
+#define ADDR_EXT	BIT(7)
 #define	SUB_INDEX	BIT(6)
 
 #define DW1000_REG_READ(x)	(x)
@@ -64,15 +64,11 @@ struct dw1000_local {
 	struct sk_buff *tx_skb;
 
 	/* SPI transaction with 3-octet header */
-	struct spi_message spi_msg;
-	u8 first_octet[1];
-	struct spi_transfer first_octet_xfer;
-	u8 second_octet[1];
-	struct spi_transfer second_octet_xfer;
-	u8 third_octet[1];
-	struct spi_transfer third_octet_xfer;
-	u8 val[1];
-	struct spi_transfer val_xfer;
+	struct spi_message reg_msg;
+	u8 reg_addr[3];
+	struct spi_transfer reg_addr_xfer;
+	u8 reg_val[16];
+	struct spi_transfer reg_val_xfer;
 };
 
 /* DW1000 operational states */
@@ -176,11 +172,6 @@ dw1000_awake(struct dw1000_local *lp)
 
 }
 
-#define REG_READ(x)	(x)
-#define REG_WRITE(x)	BIT(8)
-#define ADDR_EXT	BIT(8)
-#define	SUB_INDEX	BIT(6)
-
 /*
  * SPI read with a 3-octet header
 */
@@ -194,23 +185,25 @@ dw1000_read_subreg(struct dw1000_local *lp,
 	u8 index_low = index & 0x00ff;
 	u8 index_high = ((index >> 8) & 0xff00) * 2;
 
-	lp->first_octet[0] = REG_READ(addr) | SUB_INDEX;
-	dev_dbg(printdev(lp), "first_octet:0x%x\n", lp->first_octet[0]);
+	lp->reg_addr[0] = REG_READ(addr) | SUB_INDEX;
+	dev_dbg(printdev(lp), "reg_addr[0]:0x%x\n", lp->reg_addr[0]);
 
-	lp->second_octet[0] = ADDR_EXT | index_low;
-	dev_dbg(printdev(lp), "second_octet:0x%x\n", lp->second_octet[0]);
+	lp->reg_addr[1] = ADDR_EXT | index_low;
+	dev_dbg(printdev(lp), "reg_addr[1]:0x%x\n", lp->reg_addr[1]);
 
-	lp->third_octet[0] = index_high;
-	dev_dbg(printdev(lp), "third_octet:0x%x\n", lp->third_octet[0]);
+	lp->reg_addr[2] = index_high;
+	dev_dbg(printdev(lp), "reg_addr[2]:0x%x\n", lp->reg_addr[2]);
 
-	ret = spi_async(lp->spi, &lp->spi_msg);
+	lp->reg_val_xfer.len = 1;
+
+	ret = spi_sync(lp->spi, &lp->reg_msg);
 	if (ret)
 		dev_err(printdev(lp), "failed to read subreg\n");
 
-	dev_dbg(printdev(lp), "val:0x%x\n", lp->third_octet[0]);
+	dev_dbg(printdev(lp), "reg_val:0x%x\n", lp->reg_val[0]);
 
 	if (!ret)
-		*data = (*lp->val & mask) >> shift;
+		*data = (*lp->reg_val & mask) >> shift;
 
 	return ret;
 }
@@ -363,28 +356,19 @@ static const struct ieee802154_ops dw1000_ops = {
 };
 
 static void
-dw1000_setup_spi_messages(struct dw1000_local *lp)
+dw1000_setup_reg_messages(struct dw1000_local *lp)
 {
-	spi_message_init(&lp->spi_msg);
-	lp->spi_msg.context = lp;
+	spi_message_init(&lp->reg_msg);
+	lp->reg_msg.context = lp;
 
-	lp->first_octet_xfer.len = 1;
-	lp->first_octet_xfer.tx_buf = lp->first_octet;
+	lp->reg_addr_xfer.len = 3;
+	lp->reg_addr_xfer.tx_buf = lp->reg_addr;
 
-	lp->second_octet_xfer.len = 1;
-	lp->second_octet_xfer.tx_buf = lp->second_octet;
+	lp->reg_val_xfer.tx_buf = lp->reg_val;
+	lp->reg_val_xfer.rx_buf = lp->reg_val;
 
-	lp->third_octet_xfer.len = 1;
-	lp->third_octet_xfer.tx_buf = lp->third_octet;
-
-	lp->val_xfer.len = 1;
-	lp->val_xfer.tx_buf = lp->val;
-	lp->val_xfer.rx_buf = lp->val;
-
-	spi_message_add_tail(&lp->first_octet_xfer, &lp->spi_msg);
-	spi_message_add_tail(&lp->second_octet_xfer, &lp->spi_msg);
-	spi_message_add_tail(&lp->third_octet_xfer, &lp->spi_msg);
-	spi_message_add_tail(&lp->val_xfer, &lp->spi_msg);
+	spi_message_add_tail(&lp->reg_addr_xfer, &lp->reg_msg);
+	spi_message_add_tail(&lp->reg_val_xfer, &lp->reg_msg);
 }
 
 
@@ -537,7 +521,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 
 	u8 data[4] = {0, 0, 0, 0};
 
-	unsigned int val;
+	unsigned int reg_val = 0x0;
 
 //	int ret;
 	struct spi_message msg;
@@ -559,7 +543,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 	spi_message_add_tail(&xfer_buf, &msg);
 
 	lp->buf[0] = 0x40;
-	lp->buf[1] = 0x11;
+	lp->buf[1] = 0x80;
 	lp->buf[2] = 0x00;
 
 	dev_dbg(&lp->spi->dev, "read DEVID command[0] = %02x\n", lp->buf[0]);
@@ -573,15 +557,15 @@ dw1000_detect_device(struct dw1000_local *lp)
 	dev_dbg(&lp->spi->dev, "return data data[2] = %02x\n", data[2]);
 	dev_dbg(&lp->spi->dev, "return data data[3] = %02x\n", data[3]);
 
-//	dev_dbg(&lp->spi->dev, "read subreg test start >>>>>>\n");
-//
-//	dw1000_read_subreg(lp, SG_REV, &val);
-//	dev_dbg(&lp->spi->dev, "SG_REV: 0x%x", val);
-//
-//	dw1000_read_subreg(lp, SG_VER, &val);
-//	dev_dbg(&lp->spi->dev, "SG_VER: 0x%x", val);
-//
-//	dev_dbg(&lp->spi->dev, "read subreg test stop <<<<<<\n");
+	dev_dbg(&lp->spi->dev, "read subreg test start >>>>>>\n");
+
+	dw1000_read_subreg(lp, SG_REV, &reg_val);
+	dev_dbg(&lp->spi->dev, "SG_REV: 0x%x", reg_val);
+
+	dw1000_read_subreg(lp, SG_VER, &reg_val);
+	dev_dbg(&lp->spi->dev, "SG_VER: 0x%x", reg_val);
+
+	dev_dbg(&lp->spi->dev, "read subreg test stop <<<<<<\n");
 
 	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM |
 			IEEE802154_HW_CSMA_PARAMS |
@@ -698,7 +682,7 @@ static int dw1000_probe(struct spi_device *spi)
 	if (!lp->buf)
 		return -ENOMEM;
 
-	dw1000_setup_spi_messages(lp);
+	dw1000_setup_reg_messages(lp);
 
 	rc = dw1000_detect_device(lp);
 	if (rc < 0)
