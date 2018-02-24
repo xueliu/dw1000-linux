@@ -37,10 +37,10 @@
 
 #define	SPI_COMMAND_BUFFER	5
 
-#define REG_READ(x)	(x)
-#define REG_WRITE(x)	BIT(7)
+#define REG_READ	(0)
+#define REG_WRITE	BIT(7)
+#define SUB_INDEX	BIT(6)
 #define ADDR_EXT	BIT(7)
-#define	SUB_INDEX	BIT(6)
 
 #define DW1000_REG_READ(x)	(x)
 #define DW1000_REG_WRITE(x)	(REG_WRITE | (x))
@@ -127,6 +127,234 @@ enum {
 // 	.precious_reg = dw1000_reg_precious,
 // };
 
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_read_reg()
+ *
+ * @brief  this function is used to read from the DW1000 device registers
+ * Notes:
+ *        1. Firstly we create a header (the first byte is a header byte)
+ *        a. check if sub index is used, if subindexing is used - set bit-6 to 1 to signify that the sub-index address follows the register index byte
+ *        b. set bit-7 (or with 0x80) for write operation
+ *        c. if extended sub address index is used (i.e. if index > 127) set bit-7 of the first sub-index byte following the first header byte
+ *
+ *        2. Write the header followed by the data bytes to the DW1000 device
+ *        3. Store the read data in the input buffer
+ *
+ * input parameters:
+ * @param lp 		- struct dw1000_local
+ * @param addr  - ID of register file or buffer being accessed
+ * @param index         - byte index into register file or buffer being accessed
+ * @param length        - number of bytes being read
+ * @param data		- pointer to buffer in which to return the read data.
+ *
+ * output parameters
+ *
+ * returns SPI transmission status
+ */
+static int
+dw1000_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data)
+{
+	u8 header[3] = { 0, 0, 0}; // Buffer to compose header in
+	int   cnt = 0; // Counter for length of header
+	int i;
+	struct spi_message msg;
+	struct spi_transfer header_xfer = {
+		.tx_buf = header,
+	};
+
+	struct spi_transfer data_xfer = {
+		.len = length,
+		.rx_buf = data,
+	};
+
+	// Write message header selecting READ operation and addresses as appropriate (this is one to three bytes long)
+	if (index == 0) { // For index of 0, no sub-index is required
+		header[cnt++] = (u8)addr; // Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
+	} else {
+		// Bit-7 zero is READ operation, bit-6 one=sub-address follows, bits 5-0 is reg file id
+		header[cnt++] = (u8)(0x40 | addr);
+
+		if (index <= 127) { // For non-zero index < 127, just a single sub-index byte is required
+			header[cnt++] = (u8)index; // Bit-7 zero means no extension, bits 6-0 is index.
+		} else {
+			header[cnt++] = 0x80 | (u8)(index); // Bit-7 one means extended index, bits 6-0 is low seven bits of index.
+			header[cnt++] =  (u8)(index >> 7); // 8-bit value = high eight bits of index.
+		}
+	}
+
+	header_xfer.len = cnt;
+
+	for (i = 0; i < cnt; i++) {
+		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
+	}
+
+	spi_message_init(&msg);
+	spi_message_add_tail(&header_xfer, &msg);
+	spi_message_add_tail(&data_xfer, &msg);
+
+	return spi_sync(lp->spi, &msg);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_read_8bit_reg()
+ *
+ * @brief  this function is used to read an 8-bit value from the DW1000 device registers
+ *
+ * input parameters:
+ * @param lp - dw1000_local
+ * @param addr - ID of register file or buffer being accessed
+ * @param index - the index into register file or buffer being accessed
+ * @param data - u8 data read from register
+ *
+ * output parameters
+ *
+ * returns SPI transmission status
+ */
+static int
+dw1000_read_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data) {
+
+	// Read 1 bytes (8-bits) register into buffer
+	return dw1000_read_reg(lp, addr, index, sizeof(data), data);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_read_16bit_reg()
+ *
+ * @brief  this function is used to read an 16-bit value from the DW1000 device registers
+ *
+ * input parameters:
+ * @param lp - dw1000_local
+ * @param addr - ID of register file or buffer being accessed
+ * @param index - the index into register file or buffer being accessed
+ * @param data - u16 data read from register
+ *
+ * output parameters
+ *
+ * returns SPI transmission status
+ */
+static int
+dw1000_read_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 *data) {
+	int ret;
+
+	// Read 2 bytes (16-bits) register into buffer
+	ret = dw1000_read_reg(lp, addr, index, sizeof(data), data);
+
+	if (ret) {
+		return ret;
+	}
+
+	le16_to_cpus(data);
+
+	return ret;
+}
+
+static int
+dw1000_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data) {
+	int ret;
+
+	// Read 4 bytes (32-bits) register into buffer
+	ret = dw1000_read_reg(lp, addr, index, sizeof(data), data);
+
+	if (ret) {
+		return ret;
+	}
+
+	le32_to_cpus(data);
+
+	return ret;
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_write_reg()
+ *
+ * @brief  this function is used to write to the DW1000 device registers
+ * Notes:
+ *        1. Firstly we create a header (the first byte is a header byte)
+ *        a. check if sub index is used, if subindexing is used - set bit-6 to 1 to signify that the sub-index address follows the register index byte
+ *        b. set bit-7 (or with 0x80) for write operation
+ *        c. if extended sub address index is used (i.e. if index > 127) set bit-7 of the first sub-index byte following the first header byte
+ *
+ *        2. Write the header followed by the data bytes to the DW1000 device
+ *
+ *
+ * input parameters:
+ * @param lp		- struct dw1000_local
+ * @param addr		- ID of register file or buffer being accessed
+ * @param index         - byte index into register file or buffer being accessed
+ * @param length        - number of bytes being written
+ * @param data		- pointer to buffer containing the 'length' bytes to be written
+ *
+ * output parameters
+ *
+ * returns
+ */
+static int
+dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data)
+{
+	u8 header[3] = { 0, 0, 0 }; // Buffer to compose header in
+	int   cnt = 0; // Counter for length of header
+	int i;
+	struct spi_message msg;
+	struct spi_transfer header_xfer = {
+		.tx_buf = header,
+	};
+
+	struct spi_transfer data_xfer = {
+		.len = length,
+		.tx_buf = data,
+	};
+
+	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
+	if (index == 0) { // For index of 0, no sub-index is required
+		// Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
+		header[cnt++] = REG_WRITE | (u8)addr;
+	} else {
+		// Bit-7 is WRITE operation, bit-6 one=sub-address follows, bits 5-0 is reg file id
+		header[cnt++] = (u8)(REG_WRITE | SUB_INDEX | addr);
+
+		if (index <= 127) { // For non-zero index < 127, just a single sub-index byte is required
+			header[cnt++] = (u8)index; // Bit-7 zero means no extension, bits 6-0 is index.
+		} else {
+			header[cnt++] = REG_WRITE | (u8)(index); // Bit-7 one means extended index, bits 6-0 is low seven bits of index.
+			header[cnt++] =  (u8)(index >> 7); // 8-bit value = high eight bits of index.
+		}
+	}
+
+	header_xfer.len = cnt;
+
+	for (i = 0; i < cnt; i++) {
+		dev_dbg(printdev(lp), "write addr[%d]:0x%x\n", i, header[i]);
+	}
+
+	spi_message_init(&msg);
+	spi_message_add_tail(&header_xfer, &msg);
+	spi_message_add_tail(&data_xfer, &msg);
+
+	return spi_sync(lp->spi, &msg);
+}
+
+static int
+dw1000_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data)
+{
+	return dw1000_write_reg(lp, addr, index, sizeof(data), data);
+}
+
+static int
+dw1000_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 *data)
+{
+	cpu_to_le16s(&data);
+	return dw1000_write_reg(lp, addr, index, sizeof(data), data);
+}
+
+
+static int
+dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data)
+{
+	cpu_to_le32s(&data);
+	return dw1000_write_reg(lp, addr, index, sizeof(data), data);
+}
+
 static int
 dw1000_regmap_write(void *context, const void *data,
 			       size_t count)
@@ -175,38 +403,38 @@ dw1000_awake(struct dw1000_local *lp)
 /*
  * SPI read with a 3-octet header
 */
-static inline int
-dw1000_read_subreg(struct dw1000_local *lp,
-	unsigned int addr, unsigned int index, unsigned int mask,
-	unsigned int shift, unsigned int *data)
-{
-	int ret;
-
-	u8 index_low = index & 0x00ff;
-	u8 index_high = ((index >> 8) & 0xff00) * 2;
-
-	lp->reg_addr[0] = REG_READ(addr) | SUB_INDEX;
-	dev_dbg(printdev(lp), "reg_addr[0]:0x%x\n", lp->reg_addr[0]);
-
-	lp->reg_addr[1] = ADDR_EXT | index_low;
-	dev_dbg(printdev(lp), "reg_addr[1]:0x%x\n", lp->reg_addr[1]);
-
-	lp->reg_addr[2] = index_high;
-	dev_dbg(printdev(lp), "reg_addr[2]:0x%x\n", lp->reg_addr[2]);
-
-	lp->reg_val_xfer.len = 1;
-
-	ret = spi_sync(lp->spi, &lp->reg_msg);
-	if (ret)
-		dev_err(printdev(lp), "failed to read subreg\n");
-
-	dev_dbg(printdev(lp), "reg_val:0x%x\n", lp->reg_val[0]);
-
-	if (!ret)
-		*data = (*lp->reg_val & mask) >> shift;
-
-	return ret;
-}
+//static inline int
+//dw1000_read_subreg(struct dw1000_local *lp,
+//	unsigned int addr, unsigned int index, unsigned int mask,
+//	unsigned int shift, unsigned int *data)
+//{
+//	int ret;
+//
+//	u8 index_low = index & 0x00ff;
+//	u8 index_high = ((index >> 8) & 0xff00) * 2;
+//
+//	lp->reg_addr[0] = REG_READ(addr) | SUB_INDEX;
+//	dev_dbg(printdev(lp), "reg_addr[0]:0x%x\n", lp->reg_addr[0]);
+//
+//	lp->reg_addr[1] = ADDR_EXT | index_low;
+//	dev_dbg(printdev(lp), "reg_addr[1]:0x%x\n", lp->reg_addr[1]);
+//
+//	lp->reg_addr[2] = index_high;
+//	dev_dbg(printdev(lp), "reg_addr[2]:0x%x\n", lp->reg_addr[2]);
+//
+//	lp->reg_val_xfer.len = 1;
+//
+//	ret = spi_sync(lp->spi, &lp->reg_msg);
+//	if (ret)
+//		dev_err(printdev(lp), "failed to read subreg\n");
+//
+//	dev_dbg(printdev(lp), "reg_val:0x%x\n", lp->reg_val[0]);
+//
+//	if (!ret)
+//		*data = (*lp->reg_val & mask) >> shift;
+//
+//	return ret;
+//}
 //
 //static inline int
 //dw1000_write_subreg(struct at86rf230_local *lp,
@@ -520,8 +748,9 @@ dw1000_detect_device(struct dw1000_local *lp)
 	int status;
 
 	u8 data[4] = {0, 0, 0, 0};
+	u32 dev_id = 0;
 
-	unsigned int reg_val = 0x0;
+//	unsigned int reg_val = 0x0;
 
 //	int ret;
 	struct spi_message msg;
@@ -557,15 +786,19 @@ dw1000_detect_device(struct dw1000_local *lp)
 	dev_dbg(&lp->spi->dev, "return data data[2] = %02x\n", data[2]);
 	dev_dbg(&lp->spi->dev, "return data data[3] = %02x\n", data[3]);
 
-	dev_dbg(&lp->spi->dev, "read subreg test start >>>>>>\n");
+//	dev_dbg(&lp->spi->dev, "read subreg test start >>>>>>\n");
+//
+//	dw1000_read_subreg(lp, SG_REV, &reg_val);
+//	dev_dbg(&lp->spi->dev, "SG_REV: 0x%x", reg_val);
+//
+//	dw1000_read_subreg(lp, SG_VER, &reg_val);
+//	dev_dbg(&lp->spi->dev, "SG_VER: 0x%x", reg_val);
+//
+//	dev_dbg(&lp->spi->dev, "read subreg test stop <<<<<<\n");
 
-	dw1000_read_subreg(lp, SG_REV, &reg_val);
-	dev_dbg(&lp->spi->dev, "SG_REV: 0x%x", reg_val);
+	dw1000_read_32bit_reg(lp, RG_DEV_ID, 0, &dev_id);
+	dev_dbg(&lp->spi->dev, "DEV_ID:0x%x\n", dev_id);
 
-	dw1000_read_subreg(lp, SG_VER, &reg_val);
-	dev_dbg(&lp->spi->dev, "SG_VER: 0x%x", reg_val);
-
-	dev_dbg(&lp->spi->dev, "read subreg test stop <<<<<<\n");
 
 	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM |
 			IEEE802154_HW_CSMA_PARAMS |
