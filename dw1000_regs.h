@@ -174,7 +174,7 @@ extern "C" {
 **/
 #define RX_FWTO_ID              0x0C            /* Receive Frame Wait Timeout Period */
 #define RX_FWTO_OFFSET          0x00
-#define RX_FWTO_LEN             (2)             /* doc bug*/
+#define RX_FWTO_LEN             (2)
 /*mask and shift */
 #define RX_FWTO_MASK            0xFFFF
 
@@ -368,21 +368,25 @@ extern "C" {
 #define RX_FQUAL_ID             0x12            /* Rx Frame Quality information (in double buffer set) */
 #define RX_FQUAL_LEN            (8)             /* note 64 bit register*/
 /*mask and shift */
+
 /*offset 0 */
 #define RX_EQUAL_STD_NOISE_MASK 0x0000FFFFULL   /* Standard Deviation of Noise */
 #define RX_EQUAL_STD_NOISE_SHIFT (0)
 #define STD_NOISE_MASK          RX_EQUAL_STD_NOISE_MASK
 #define STD_NOISE_SHIFT         RX_EQUAL_STD_NOISE_SHIFT
+
 /*offset 16 */
-#define RX_EQUAL_FP_AMPL2_MASK  0xFFFF0000ULL   /* First Path Amplitude point 2 */
+#define RX_EQUAL_FP_AMPL2_MASK  0xFFFF0000ULL   /* First Path Amplitude point 2 - magnitude of 2nd point after Ceiling(FP_Index) */
 #define RX_EQUAL_FP_AMPL2_SHIFT (16)
 #define FP_AMPL2_MASK           RX_EQUAL_FP_AMPL2_MASK
 #define FP_AMPL2_SHIFT          RX_EQUAL_FP_AMPL2_SHIFT
+
 /*offset 32*/
-#define RX_EQUAL_PP_AMPL3_MASK  0x0000FFFF00000000ULL   /* First Path Amplitude point 3 */
-#define RX_EQUAL_PP_AMPL3_SHIFT (32)
-#define PP_AMPL3_MASK           RX_EQUAL_PP_AMPL3_MASK
-#define PP_AMPL3_SHIFT          RX_EQUAL_PP_AMPL3_SHIFT
+#define RX_EQUAL_FP_AMPL3_MASK  0x0000FFFF00000000ULL   /* First Path Amplitude point 3 - magnitude of 1st point after Ceiling(FP_Index)  */
+#define RX_EQUAL_FP_AMPL3_SHIFT (32)
+#define FP_AMPL3_MASK           RX_EQUAL_FP_AMPL3_MASK
+#define FP_AMPL3_SHIFT          RX_EQUAL_FP_AMPL3_SHIFT
+
 /*offset 48*/
 #define RX_EQUAL_CIR_MXG_MASK   0xFFFF000000000000ULL   /* Channel Impulse Response Max Growth */
 #define RX_EQUAL_CIR_MXG_SHIFT  (48)
@@ -427,7 +431,7 @@ extern "C" {
 /*mask and shift */
 #define RX_TIME_RX_STAMP_OFFSET  (0) /* byte 0..4 40 bit Reports the fully adjusted time of reception. */
 #define RX_TIME_FP_INDEX_OFFSET  (5)    /* byte 5..6 16 bit First path index. */
-#define RX_TIME_FP_AMPL1_OFFSET  (7)    /* byte 7..8 16 bit First Path Amplitude point 1 */   /* doc bug */
+#define RX_TIME_FP_AMPL1_OFFSET  (7)    /* byte 7..8 16 bit First Path Amplitude - magnitude of 3rd point after Ceiling(FP_Index) */
 #define RX_TIME_FP_RAWST_OFFSET  (9)    /* byte 9..13 40 bit Raw Timestamp for the frame */
 
 
@@ -617,7 +621,7 @@ extern "C" {
 #define AGC_TUNE3_OFFSET        (0x12)
 #define AGC_TUNE3_LEN           (2)
 #define AGC_TUNE3_MASK          0xFFFF
-#define AGC_TUNE3_VAL           0X0055
+#define AGC_TUNE3_VAL           0X0035
 /* offset from AGC_CTRL_ID in bytes */
 #define AGC_STAT1_OFFSET        (0x1E)
 #define AGC_STAT1_LEN           (3)
@@ -906,6 +910,11 @@ extern "C" {
 #define DRX_TUNE4H_PRE64        0x0010
 #define DRX_TUNE4H_PRE128PLUS   0x0028
 
+/* offset from DRX_CONF_ID in bytes to 21-bit signed RX carrier integrator value */
+#define DRX_CARRIER_INT_OFFSET  0x28
+#define DRX_CARRIER_INT_LEN     (3)
+#define DRX_CARRIER_INT_MASK    0x001FFFFF
+
 
 /****************************************************************************//**
  * @brief Bit definitions for register  RF_CONF
@@ -918,6 +927,7 @@ extern "C" {
 #define RF_CONF_RXEN_MASK       0x00200000UL   /* RX enable */
 #define RF_CONF_TXPOW_MASK      0x001F0000UL   /* turn on power all LDOs */
 #define RF_CONF_PLLEN_MASK      0x0000E000UL   /* enable PLLs */
+#define RF_CONF_PGMIXBIASEN_MASK    0x0000A700UL    /* Enable TX mixer bias and pulse gen */
 #define RF_CONF_TXBLOCKSEN_MASK 0x00001F00UL   /* enable TX blocks */
 #define RF_CONF_TXPLLPOWEN_MASK (RF_CONF_PLLEN_MASK | RF_CONF_TXPOW_MASK)
 #define RF_CONF_TXALLEN_MASK    (RF_CONF_TXEN_MASK | RF_CONF_TXPOW_MASK | RF_CONF_PLLEN_MASK | RF_CONF_TXBLOCKSEN_MASK)
@@ -950,15 +960,27 @@ extern "C" {
  * @brief Bit definitions for register TX_CAL
  * Refer to section 7.2.43 Register file: 0x2A – Transmitter Calibration block
 **/
-#define TX_CAL_ID               0x2A            /* Transmitter calibration block */
-#define TX_CAL_LEN              (52)
+#define TX_CAL_ID                   0x2A        /* Transmitter calibration block */
+#define TX_CAL_LEN                  (52)
 /* offset from TX_CAL_ID in bytes */
-#define TC_SARL_SAR_C		        (0)         /* SAR control */
-/*cause bug in register block TX_CAL, we need to read 1 byte in a time*/
+#define TC_SARL_SAR_C               (0)         /* SAR control */
 #define TC_SARL_SAR_LVBAT_OFFSET    (3)         /* Latest SAR reading for Voltage level */
 #define TC_SARL_SAR_LTEMP_OFFSET    (4)         /* Latest SAR reading for Temperature level */
-#define TC_SARW_SAR_WTEMP_OFFSET    0x06            /* SAR reading of Temperature level taken at last wakeup event */
-#define TC_SARW_SAR_WVBAT_OFFSET    0x07            /* SAR reading of Voltage level taken at last wakeup event */
+#define TC_SARW_SAR_WTEMP_OFFSET    0x06        /* SAR reading of Temperature level taken at last wakeup event */
+#define TC_SARW_SAR_WVBAT_OFFSET    0x07        /* SAR reading of Voltage level taken at last wakeup event */
+
+#define TC_PGCCTRL_OFFSET       0x08        /* Pulse Generator Calibration control */
+#define TC_PGCCTRL_LEN          (1)
+#define TC_PGCCTRL_CALSTART     0x01        /* Start PG cal procedure */
+#define TC_PGCCTRL_AUTOCAL      0x02        /* Starts a PG autocalibration loop */
+#define TC_PGCCTRL_TMEAS_MASK   0x3C        /* Mask to retrieve number of clock cycles over which to run PG cal counter */
+#define TC_PGCCTRL_ON_TX        0x40        /* Perform autocal on each TX enable */
+#define TC_PGCCTRL_DIR_CONV     0x80        /* Direction (converging) of autocal binary search */
+
+#define TC_PGCAL_STATUS_OFFSET      0x09    /* Status register from PG calibration block */
+#define TC_PGCAL_STATUS_LEN         (1)
+#define TC_PGCAL_STATUS_DELAY_MASK  0xFFF   /* Mask to retrieve PG delay count from calibration */
+
 /* offset from TX_CAL_ID in bytes */
 #define TC_PGDELAY_OFFSET       0x0B            /* Transmitter Calibration – Pulse Generator Delay */
 #define TC_PGDELAY_LEN          (1)
@@ -1049,8 +1071,8 @@ extern "C" {
 #define AON_ADDR_LPOSC_CAL_1    118     /* Address of low-power oscillator calibration value (lower byte) */
 
 /* offset from AON_ID in bytes */
-#define AON_CFG0_OFFSET         0x06    /* 32-bit configuration register for the always on block. */
-#define AON_CFG0_LEN            (4)
+#define AON_CFG0_OFFSET             0x06    /* 32-bit configuration register for the always on block. */
+#define AON_CFG0_LEN                (4)
 #define AON_CFG0_SLEEP_EN           0x00000001UL    /* This is the sleep enable configuration bit */
 #define AON_CFG0_WAKE_PIN           0x00000002UL    /* Wake using WAKEUP pin */
 #define AON_CFG0_WAKE_SPI           0x00000004UL    /* Wake using SPI access SPICSn */
@@ -1111,7 +1133,7 @@ extern "C" {
 #define OTP_SF_OPS_SEL_SHFT     5
 #define OTP_SF_OPS_SEL_MASK     0x60
 #define OTP_SF_OPS_SEL_L64      0x00            /* Operating parameter set selection: Length64 */
-#define OTP_SF_OPS_SEL_TIGHT    0x40            /* Operating parameter set selection: Tight */
+#define OTP_SF_OPS_SEL_TIGHT    0x20            /* Operating parameter set selection: Tight */
 
 /****************************************************************************//**
  * @brief Bit definitions for register LDE_IF

@@ -32,6 +32,7 @@
 #include <linux/device.h>
 
 #include "dw1000.h"
+#include "dw1000_regs.h"
 
 #define printdev(X) (&X->spi->dev)
 
@@ -45,8 +46,160 @@
 #define DW1000_REG_READ(x)	(x)
 #define DW1000_REG_WRITE(x)	(REG_WRITE | (x))
 
+/* Defines for enable_clocks function */
+#define FORCE_SYS_XTI  0
+#define ENABLE_ALL_SEQ 1
+#define FORCE_SYS_PLL  2
+#define READ_ACC_ON    7
+#define READ_ACC_OFF   8
+#define FORCE_OTP_ON   11
+#define FORCE_OTP_OFF  12
+#define FORCE_TX_PLL   13
+#define FORCE_LDE      14
+
+// Defines for ACK request bitmask in DATA and MAC COMMAND frame control (first byte) - Used to detect AAT bit wrongly set.
+#define FCTRL_ACK_REQ_MASK 0x20
+// Frame control maximum length in bytes.
+#define FCTRL_LEN_MAX 2
+
+// OTP addresses definitions
+#define LDOTUNE_ADDRESS (0x04)
+#define PARTID_ADDRESS (0x06)
+#define LOTID_ADDRESS  (0x07)
+#define VBAT_ADDRESS   (0x08)
+#define VTEMP_ADDRESS  (0x09)
+#define XTRIM_ADDRESS  (0x1E)
+
+#define DW1000_SUCCESS (0)
+#define DW1000_ERROR   (-1)
+
+#define DW1000_TIME_UNITS          (1.0/499.2e6/128.0) //!< = 15.65e-12 s
+
+#define DW1000_DEVICE_ID   (0xDECA0130)        //!< DW1000 MP device ID
+
+//! constants for selecting the bit rate for data TX (and RX)
+//! These are defined for write (with just a shift) the TX_FCTRL register
+#define DW1000_BR_110K     0   //!< UWB bit rate 110 kbits/s
+#define DW1000_BR_850K     1   //!< UWB bit rate 850 kbits/s
+#define DW1000_BR_6M8      2   //!< UWB bit rate 6.8 Mbits/s
+
+//! constants for specifying the (Nominal) mean Pulse Repetition Frequency
+//! These are defined for direct write (with a shift if necessary) to CHAN_CTRL and TX_FCTRL regs
+#define DW1000_PRF_16M     1   //!< UWB PRF 16 MHz
+#define DW1000_PRF_64M     2   //!< UWB PRF 64 MHz
+
+//! constants for specifying Preamble Acquisition Chunk (PAC) Size in symbols
+#define DW1000_PAC8        0   //!< PAC  8 (recommended for RX of preamble length  128 and below
+#define DW1000_PAC16       1   //!< PAC 16 (recommended for RX of preamble length  256
+#define DW1000_PAC32       2   //!< PAC 32 (recommended for RX of preamble length  512
+#define DW1000_PAC64       3   //!< PAC 64 (recommended for RX of preamble length 1024 and up
+
+//! constants for specifying TX Preamble length in symbols
+//! These are defined to allow them be directly written into byte 2 of the TX_FCTRL register
+//! (i.e. a four bit value destined for bits 20..18 but shifted left by 2 for byte alignment)
+#define DW1000_PLEN_4096   0x0C    //! Standard preamble length 4096 symbols
+#define DW1000_PLEN_2048   0x28    //! Non-standard preamble length 2048 symbols
+#define DW1000_PLEN_1536   0x18    //! Non-standard preamble length 1536 symbols
+#define DW1000_PLEN_1024   0x08    //! Standard preamble length 1024 symbols
+#define DW1000_PLEN_512    0x34    //! Non-standard preamble length 512 symbols
+#define DW1000_PLEN_256    0x24    //! Non-standard preamble length 256 symbols
+#define DW1000_PLEN_128    0x14    //! Non-standard preamble length 128 symbols
+#define DW1000_PLEN_64     0x04    //! Standard preamble length 64 symbols
+
+#define DW1000_SFDTOC_DEF              0x1041  // default SFD timeout value
+
+#define DW1000_PHRMODE_STD             0x0     // standard PHR mode
+#define DW1000_PHRMODE_EXT             0x3     // DW proprietary extended frames PHR mode
+
+// Defined constants for "mode" bitmask parameter passed into dwt_starttx() function.
+#define DW1000_START_TX_IMMEDIATE      0
+#define DW1000_START_TX_DELAYED        1
+#define DW1000_RESPONSE_EXPECTED       2
+
+#define DW1000_START_RX_IMMEDIATE  0
+#define DW1000_START_RX_DELAYED    1    // Set up delayed RX, if "late" error triggers, then the RX will be enabled immediately
+#define DW1000_IDLE_ON_DLY_ERR     2    // If delayed RX failed due to "late" error then if this
+// flag is set the RX will not be re-enabled immediately, and device will be in IDLE when function exits
+#define DW1000_NO_SYNC_PTRS        4    // Do not try to sync IC side and Host side buffer pointers when enabling RX. This is used to perform manual RX
+// re-enabling when receiving a frame in double buffer mode.
+
+// Defined constants for "mode" bit field parameter passed to dwt_setleds() function.
+#define DW1000_LEDS_DISABLE     0x00
+#define DW1000_LEDS_ENABLE      0x01
+#define DW1000_LEDS_INIT_BLINK  0x02
+
+//frame filtering configuration options
+#define DW1000_FF_NOTYPE_EN            0x000           // no frame types allowed (FF disabled)
+#define DW1000_FF_COORD_EN             0x002           // behave as coordinator (can receive frames with no dest address (PAN ID has to match))
+#define DW1000_FF_BEACON_EN            0x004           // beacon frames allowed
+#define DW1000_FF_DATA_EN              0x008           // data frames allowed
+#define DW1000_FF_ACK_EN               0x010           // ack frames allowed
+#define DW1000_FF_MAC_EN               0x020           // mac control frames allowed
+#define DW1000_FF_RSVD_EN              0x040           // reserved frame types allowed
+
+//DW1000 interrupt events
+#define DW1000_INT_TFRS            0x00000080          // frame sent
+#define DW1000_INT_LDED            0x00000400          // micro-code has finished execution
+#define DW1000_INT_RFCG            0x00004000          // frame received with good CRC
+#define DW1000_INT_RPHE            0x00001000          // receiver PHY header error
+#define DW1000_INT_RFCE            0x00008000          // receiver CRC error
+#define DW1000_INT_RFSL            0x00010000          // receiver sync loss error
+#define DW1000_INT_RFTO            0x00020000          // frame wait timeout
+#define DW1000_INT_RXOVRR          0x00100000          // receiver overrun
+#define DW1000_INT_RXPTO           0x00200000          // preamble detect timeout
+#define DW1000_INT_SFDT            0x04000000          // SFD timeout
+#define DW1000_INT_ARFE            0x20000000          // frame rejected (due to frame filtering configuration)
+
+
+//DW1000 SLEEP and WAKEUP configuration parameters
+#define DW1000_PRESRV_SLEEP 0x0100                      // PRES_SLEEP - on wakeup preserve sleep bit
+#define DW1000_LOADOPSET    0x0080                      // ONW_L64P - on wakeup load operating parameter set for 64 PSR
+#define DW1000_CONFIG       0x0040                      // ONW_LDC - on wakeup restore (load) the saved configurations (from AON array into HIF)
+#define DW1000_RX_EN        0x0002                      // ONW_RX - on wakeup activate reception
+#define DW1000_TANDV        0x0001                      // ONW_RADC - on wakeup run ADC to sample temperature and voltage sensor values
+
+#define DW1000_XTAL_EN      0x10                       // keep XTAL running during sleep
+#define DW1000_WAKE_SLPCNT  0x8                        // wake up after sleep count
+#define DW1000_WAKE_CS      0x4                        // wake up on chip select
+#define DW1000_WAKE_WK      0x2                        // wake up on WAKEUP PIN
+#define DW1000_SLP_EN       0x1                        // enable sleep/deep sleep functionality
+
+//DW1000 INIT configuration parameters
+#define DW1000_LOADUCODE     0x1
+#define DW1000_LOADNONE      0x0
+
+//DW1000 OTP operating parameter set selection
+#define DW1000_OPSET_64LEN   0x0
+#define DW1000_OPSET_TIGHT   0x1
+#define DW1000_OPSET_DEFLT   0x2
+
+// Call-back data RX frames flags
+#define DW100_CB_DATA_RX_FLAG_RNG 0x1 // Ranging bit
+
+// Structure to hold device data
+struct dw1000_data
+{
+	u32      partID;            // IC Part ID - read during initialisation
+	u32      lotID;             // IC Lot ID - read during initialisation
+	u8       longFrames;        // Flag in non-standard long frame mode
+	u8       otprev;            // OTP revision number (read during initialisation)
+	u32      txFCTRL;           // Keep TX_FCTRL register config
+	u8       init_xtrim;         // initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed)
+	u8       dblbuffon;          // Double RX buffer mode flag
+	u32      sysCFGreg;         // Local copy of system config register
+	u16      sleep_mode;         // Used for automatic reloading of LDO tune and microcode at wake-up
+	u8       wait4resp;         // wait4response was set with last TX start command
+//	dwt_cb_data_t cbData;           // Callback data structure
+//	dwt_cb_t    cbTxDone;           // Callback for TX confirmation event
+//	dwt_cb_t    cbRxOk;             // Callback for RX good frame event
+//	dwt_cb_t    cbRxTo;             // Callback for RX timeout events
+//	dwt_cb_t    cbRxErr;            // Callback for RX error events
+};
+
 struct dw1000_local {
 	struct spi_device *spi;
+
+	struct dw1000_data pdata;
 
 	struct ieee802154_hw *hw;
 	struct regmap *regmap;
@@ -290,7 +443,7 @@ dw1000_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data) {
  * returns
  */
 static int
-dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data)
+dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const void *data)
 {
 	u8 header[3] = { 0, 0, 0 }; // Buffer to compose header in
 	int   cnt = 0; // Counter for length of header
@@ -335,24 +488,24 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void 
 }
 
 static int
-dw1000_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data)
+dw1000_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 data)
 {
-	return dw1000_write_reg(lp, addr, index, sizeof(data), data);
+	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
 }
 
 static int
-dw1000_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 *data)
+dw1000_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 data)
 {
 	cpu_to_le16s(&data);
-	return dw1000_write_reg(lp, addr, index, sizeof(data), data);
+	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
 }
 
 
 static int
-dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data)
+dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data)
 {
 	cpu_to_le32s(&data);
-	return dw1000_write_reg(lp, addr, index, sizeof(data), data);
+	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
 }
 
 static int
@@ -388,6 +541,319 @@ static const struct regmap_bus dw1000_regmap_bus = {
 	.val_format_endian_default = REGMAP_ENDIAN_BIG,
 };
 
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_enable_clocks()
+ *
+ * @brief function to enable/disable clocks to particular digital blocks/system
+ *
+ * input parameters
+ * @param clocks - set of clocks to enable/disable
+ *
+ * output parameters none
+ *
+ * no return value
+ */
+void _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
+{
+	u8 reg[2];
+
+	dw1000_read_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, 2, reg);
+	switch (clocks) {
+	case ENABLE_ALL_SEQ:
+		{
+			reg[0] = 0x00;
+			reg[1] = reg[1] & 0xfe;
+		}
+		break;
+	case FORCE_SYS_XTI:
+		{
+			// System and RX
+			reg[0] = 0x01 | (reg[0] & 0xfc);
+		}
+		break;
+	case FORCE_SYS_PLL:
+		{
+			// System
+			reg[0] = 0x02 | (reg[0] & 0xfc);
+		}
+		break;
+	case READ_ACC_ON:
+		{
+			reg[0] = 0x48 | (reg[0] & 0xb3);
+			reg[1] = 0x80 | reg[1];
+		}
+		break;
+	case READ_ACC_OFF:
+		{
+			reg[0] = reg[0] & 0xb3;
+			reg[1] = 0x7f & reg[1];
+		}
+		break;
+	case FORCE_OTP_ON:
+		{
+			reg[1] = 0x02 | reg[1];
+		}
+		break;
+	case FORCE_OTP_OFF:
+		{
+			reg[1] = reg[1] & 0xfd;
+		}
+		break;
+	case FORCE_TX_PLL:
+		{
+			reg[0] = 0x20 | (reg[0] & 0xcf);
+		}
+		break;
+	case FORCE_LDE:
+		{
+			reg[0] = 0x01;
+			reg[1] = 0x03;
+		}
+		break;
+	default:
+		break;
+	}
+
+
+	// Need to write lower byte separately before setting the higher byte(s)
+	dw1000_write_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, 1, &reg[0]);
+	dw1000_write_reg(lp, PMSC_ID, 0x1, 1, &reg[1]);
+
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_read_otp() / _dwt_otpread()
+ *
+ * @brief function to read the OTP memory. Ensure that MR,MRa,MRb are reset to 0.
+ *
+ * input parameters
+ * @param address - address to read at
+ *
+ * output parameters
+ *
+ * returns the 32bit of read data
+ */
+static int
+_dw1000_read_otp(struct dw1000_local *lp, u16 address, u32 *data)
+{
+	int ret;
+
+	// Write the address
+	ret = dw1000_write_16bit_reg(lp, OTP_IF_ID, OTP_ADDR, address);
+
+	// Perform OTP Read - Manual read mode has to be set
+	ret = dw1000_write_8bit_reg(lp, OTP_IF_ID, OTP_CTRL, OTP_CTRL_OTPREAD | OTP_CTRL_OTPRDEN);
+	// OTPREAD is self clearing but OTPRDEN is not
+	ret = dw1000_write_8bit_reg(lp, OTP_IF_ID, OTP_CTRL, 0x00);
+
+	// Read read data, available 40ns after rising edge of OTP_READ
+	ret = dw1000_read_32bit_reg(lp, OTP_IF_ID, OTP_RDAT, data);
+
+	return ret;
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_read_otp()
+ *
+ * @brief This is used to read the OTP data from given address into provided array
+ *
+ * input parameters
+ * @param address - this is the OTP address to read from
+ * @param array - this is the pointer to the array into which to read the data
+ * @param length - this is the number of 32 bit words to read (array needs to be at least this length)
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static void
+dw1000_read_otp(struct dw1000_local *lp, u32 address, u8 length, u32 *array)
+{
+	int i;
+
+	/* NOTE: Set system clock to XTAL - this is necessary to make sure the values read by _dwt_otpread are reliable */
+	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
+
+	for (i = 0; i < length; i++) {
+		_dw1000_read_otp(lp, address + i, (array +i));
+	}
+
+	/* Restore system clock to PLL */
+	_dw1000_enable_clocks(lp, ENABLE_ALL_SEQ);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_set_otp_mr_regs / _dwt_otpsetmrregs()
+ *
+ * @brief Configure the MR registers for initial programming (enable charge pump).
+ * Read margin is used to stress the read back from the
+ * programmed bit. In normal operation this is relaxed.
+ *
+ * input parameters
+ * @param mode - "0" : Reset all to 0x0:           MRA=0x0000, MRB=0x0000, MR=0x0000
+ *               "1" : Set for inital programming: MRA=0x9220, MRB=0x000E, MR=0x1024
+ *               "2" : Set for soak programming:   MRA=0x9220, MRB=0x0003, MR=0x1824
+ *               "3" : High Vpp:                   MRA=0x9220, MRB=0x004E, MR=0x1824
+ *               "4" : Low Read Margin:            MRA=0x0000, MRB=0x0003, MR=0x0000
+ *               "5" : Array Clean:                MRA=0x0049, MRB=0x0003, MR=0x0024
+ *               "4" : Very Low Read Margin:       MRA=0x0000, MRB=0x0003, MR=0x0000
+ *
+ * output parameters
+ *
+ * returns DWT_SUCCESS for success, or DWT_ERROR for error
+ */
+static int
+_dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
+{
+	u8 rd_buf[4];
+	u8 wr_buf[4];
+	u32 mra = 0, mrb = 0, mr = 0;
+
+	// PROGRAMME MRA
+	// Set MRA, MODE_SEL
+	wr_buf[0] = 0x03;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+
+	// Load data
+	switch (mode & 0x0f) {
+	case 0x0 :
+		mr = 0x0000;
+		mra = 0x0000;
+		mrb = 0x0000;
+		break;
+	case 0x1 :
+		mr = 0x1024;
+		mra = 0x9220; // Enable CPP mon
+		mrb = 0x000e;
+		break;
+	case 0x2 :
+		mr = 0x1824;
+		mra = 0x9220;
+		mrb = 0x0003;
+		break;
+	case 0x3 :
+		mr = 0x1824;
+		mra = 0x9220;
+		mrb = 0x004e;
+		break;
+	case 0x4 :
+		mr = 0x0000;
+		mra = 0x0000;
+		mrb = 0x0003;
+		break;
+	case 0x5 :
+		mr = 0x0024;
+		mra = 0x0000;
+		mrb = 0x0003;
+		break;
+	default :
+		return DW1000_ERROR;
+	}
+
+	wr_buf[0] = mra & 0x00ff;
+	wr_buf[1] = (mra & 0xff00) >> 8;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_WDAT, 2, wr_buf);
+
+
+	// Set WRITE_MR
+	wr_buf[0] = 0x08;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+
+	// Wait?
+
+	// Set Clear Mode sel
+	wr_buf[0] = 0x02;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+
+	// Set AUX update, write MR
+	wr_buf[0] = 0x88;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+	// Clear write MR
+	wr_buf[0] = 0x80;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+	// Clear AUX update
+	wr_buf[0] = 0x00;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+
+	///////////////////////////////////////////
+	// PROGRAM MRB
+	// Set SLOW, MRB, MODE_SEL
+	wr_buf[0] = 0x05;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+
+	wr_buf[0] = mrb & 0x00ff;
+	wr_buf[1] = (mrb & 0xff00) >> 8;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_WDAT, 2, wr_buf);
+
+	// Set WRITE_MR
+	wr_buf[0] = 0x08;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+
+	// Wait?
+
+	// Set Clear Mode sel
+	wr_buf[0] = 0x04;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+
+	// Set AUX update, write MR
+	wr_buf[0] = 0x88;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+	// Clear write MR
+	wr_buf[0] = 0x80;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+	// Clear AUX update
+	wr_buf[0] = 0x00;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+
+	///////////////////////////////////////////
+	// PROGRAM MR
+	// Set SLOW, MODE_SEL
+	wr_buf[0] = 0x01;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+	// Load data
+
+	wr_buf[0] = mr & 0x00ff;
+	wr_buf[1] = (mr & 0xff00) >> 8;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_WDAT, 2, wr_buf);
+
+	// Set WRITE_MR
+	wr_buf[0] = 0x08;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+
+	// Wait?
+	usleep_range(100, 120);
+	// Set Clear Mode sel
+	wr_buf[0] = 0x00;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+
+	// Read confirm mode writes.
+	// Set man override, MRA_SEL
+	wr_buf[0] = OTP_CTRL_OTPRDEN;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+	wr_buf[0] = 0x02;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+	// MRB_SEL
+	wr_buf[0] = 0x04;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+	usleep_range(100, 120);
+
+	// Clear mode sel
+	wr_buf[0] = 0x00;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
+	// Clear MAN_OVERRIDE
+	wr_buf[0] = 0x00;
+	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
+
+	usleep_range(10, 16);
+
+	if (((mode & 0x0f) == 0x1) || ((mode & 0x0f) == 0x2)) {
+		// Read status register
+		dw1000_read_reg(lp, OTP_IF_ID, OTP_STAT, 1, rd_buf);
+	}
+
+	return DW1000_SUCCESS;
+}
+
 static inline void
 dw1000_sleep(struct dw1000_local *lp)
 {
@@ -399,63 +865,6 @@ dw1000_awake(struct dw1000_local *lp)
 {
 
 }
-
-/*
- * SPI read with a 3-octet header
-*/
-//static inline int
-//dw1000_read_subreg(struct dw1000_local *lp,
-//	unsigned int addr, unsigned int index, unsigned int mask,
-//	unsigned int shift, unsigned int *data)
-//{
-//	int ret;
-//
-//	u8 index_low = index & 0x00ff;
-//	u8 index_high = ((index >> 8) & 0xff00) * 2;
-//
-//	lp->reg_addr[0] = REG_READ(addr) | SUB_INDEX;
-//	dev_dbg(printdev(lp), "reg_addr[0]:0x%x\n", lp->reg_addr[0]);
-//
-//	lp->reg_addr[1] = ADDR_EXT | index_low;
-//	dev_dbg(printdev(lp), "reg_addr[1]:0x%x\n", lp->reg_addr[1]);
-//
-//	lp->reg_addr[2] = index_high;
-//	dev_dbg(printdev(lp), "reg_addr[2]:0x%x\n", lp->reg_addr[2]);
-//
-//	lp->reg_val_xfer.len = 1;
-//
-//	ret = spi_sync(lp->spi, &lp->reg_msg);
-//	if (ret)
-//		dev_err(printdev(lp), "failed to read subreg\n");
-//
-//	dev_dbg(printdev(lp), "reg_val:0x%x\n", lp->reg_val[0]);
-//
-//	if (!ret)
-//		*data = (*lp->reg_val & mask) >> shift;
-//
-//	return ret;
-//}
-//
-//static inline int
-//dw1000_write_subreg(struct at86rf230_local *lp,
-//	unsigned int addr, unsigned int mask,
-//	unsigned int shift, unsigned int data)
-//{
-//	bool sleep = lp->sleep;
-//	int ret;
-//
-//	/* awake for register setting if sleep */
-//	if (sleep)
-//		dw1000_awake(lp);
-//
-//	ret = regmap_update_bits(lp->regmap, addr, mask, data << shift);
-//
-//	/* sleep again if was sleeping */
-//	if (sleep)
-//		at86rf230_sleep(lp);
-//
-//	return ret;
-//}
 
 static irqreturn_t dw1000_isr(int irq, void *data)
 {
@@ -599,116 +1008,6 @@ dw1000_setup_reg_messages(struct dw1000_local *lp)
 	spi_message_add_tail(&lp->reg_val_xfer, &lp->reg_msg);
 }
 
-
-static int dw1000_hw_init(struct dw1000_local *lp)
-{
-//	int rc, irq_type, irq_pol = IRQ_ACTIVE_HIGH;
-//	unsigned int dvdd;
-//	u8 csma_seed[2];
-//
-	dev_dbg(printdev(lp), "%s\n", __func__);
-//
-//	rc = dw1000_sync_state_change(lp, STATE_FORCE_TRX_OFF);
-//	if (rc)
-//		return rc;
-//
-//	irq_type = irq_get_trigger_type(lp->spi->irq);
-//	if (irq_type == IRQ_TYPE_EDGE_FALLING ||
-//	    irq_type == IRQ_TYPE_LEVEL_LOW)
-//		irq_pol = IRQ_ACTIVE_LOW;
-//
-//	rc = dw1000_write_subreg(lp, SR_IRQ_POLARITY, irq_pol);
-//	if (rc)
-//		return rc;
-//
-//	rc = dw1000_write_subreg(lp, SR_RX_SAFE_MODE, 1);
-//	if (rc)
-//		return rc;
-//
-//	rc = dw1000_write_subreg(lp, SR_IRQ_MASK, IRQ_TRX_END);
-//	if (rc)
-//		return rc;
-//
-//	/* reset values differs in at86rf231 and at86rf233 */
-//	rc = dw1000_write_subreg(lp, SR_IRQ_MASK_MODE, 0);
-//	if (rc)
-//		return rc;
-//
-//	get_random_bytes(csma_seed, ARRAY_SIZE(csma_seed));
-//	rc = dw1000_write_subreg(lp, SR_CSMA_SEED_0, csma_seed[0]);
-//	if (rc)
-//		return rc;
-//	rc = dw1000_write_subreg(lp, SR_CSMA_SEED_1, csma_seed[1]);
-//	if (rc)
-//		return rc;
-//
-//	/* CLKM changes are applied immediately */
-//	rc = dw1000_write_subreg(lp, SR_CLKM_SHA_SEL, 0x00);
-//	if (rc)
-//		return rc;
-//
-//	/* Turn CLKM Off */
-//	rc = dw1000_write_subreg(lp, SR_CLKM_CTRL, 0x00);
-//	if (rc)
-//		return rc;
-//	/* Wait the next SLEEP cycle */
-//	usleep_range(lp->data->t_sleep_cycle,
-//		     lp->data->t_sleep_cycle + 100);
-
-	/* xtal_trim value is calculated by:
-	 * CL = 0.5 * (CX + CTRIM + CPAR)
-	 *
-	 * whereas:
-	 * CL = capacitor of used crystal
-	 * CX = connected capacitors at xtal pins
-	 * CPAR = in all at86rf2xx datasheets this is a constant value 3 pF,
-	 *	  but this is different on each board setup. You need to fine
-	 *	  tuning this value via CTRIM.
-	 * CTRIM = variable capacitor setting. Resolution is 0.3 pF range is
-	 *	   0 pF upto 4.5 pF.
-	 *
-	 * Examples:
-	 * atben transceiver:
-	 *
-	 * CL = 8 pF
-	 * CX = 12 pF
-	 * CPAR = 3 pF (We assume the magic constant from datasheet)
-	 * CTRIM = 0.9 pF
-	 *
-	 * (12+0.9+3)/2 = 7.95 which is nearly at 8 pF
-	 *
-	 * xtal_trim = 0x3
-	 *
-	 * openlabs transceiver:
-	 *
-	 * CL = 16 pF
-	 * CX = 22 pF
-	 * CPAR = 3 pF (We assume the magic constant from datasheet)
-	 * CTRIM = 4.5 pF
-	 *
-	 * (22+4.5+3)/2 = 14.75 which is the nearest value to 16 pF
-	 *
-	 * xtal_trim = 0xf
-	 */
-//	rc = dw1000_write_subreg(lp, SR_XTAL_TRIM, xtal_trim);
-//	if (rc)
-//		return rc;
-//
-//	rc = dw1000_read_subreg(lp, SR_DVDD_OK, &dvdd);
-//	if (rc)
-//		return rc;
-//	if (!dvdd) {
-//		dev_err(&lp->spi->dev, "DVDD error\n");
-//		return -EINVAL;
-//	}
-
-	/* Force setting slotted operation bit to 0. Sometimes the atben
-	 * sets this bit and I don't know why. We set this always force
-	 * to zero while probing.
-	 */
-	return 0;
-}
-
 static int
 dw1000_get_pdata(struct spi_device *spi, int *rstn)
 {
@@ -738,67 +1037,270 @@ dw1000_get_pdata(struct spi_device *spi, int *rstn)
 	return 0;
 }
 
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_disable_sequencing()
+ *
+ * @brief This function disables the TX blocks sequencing and go to state "INIT",
+ * it disables PMSC control of RF blocks, system clock is also set to XTAL
+ *
+ * input parameters none
+ *
+ * output parameters none
+ *
+ * no return value
+ */
+void _dw1000_disable_sequencing(struct dw1000_local *lp)
+{
+	/* Set system clock to XTI */
+	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
+
+	/* Disable PMSC ctrl of RF and RX clk blocks */
+	dw1000_write_16bit_reg(lp, PMSC_ID, PMSC_CTRL1_OFFSET, PMSC_CTRL1_PKTSEQ_DISABLE);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_upload_aon_config()
+ *
+ * @brief This function uploads always on (AON) configuration, as set in the AON_CFG0_OFFSET register.
+ *
+ * input parameters
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void _dw1000_upload_aon_config(struct dw1000_local *lp)
+{
+	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, AON_CTRL_UPL_CFG);
+	/* Clear the register */
+	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, 0x00);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_upload_aon()
+ *
+ * @brief This function uploads always on (AON) data array and configuration. Thus if this function is used, then _dwt_aonconfigupload
+ * is not necessary. The DW1000 will go so SLEEP straight after this if the DWT_SLP_EN has been set.
+ *
+ * input parameters
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void _dw1000_upload_aon_array(struct dw1000_local *lp)
+{
+	/* Clear the register */
+	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, 0x00);
+	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, AON_CTRL_SAVE);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_soft_reset()
+ *
+ * @brief this function resets the DW1000
+ *
+ * input parameters:
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void
+dw1000_soft_reset(struct dw1000_local *lp)
+{
+	_dw1000_disable_sequencing(lp);
+
+	/* Clear any AON auto download bits (as reset will trigger AON download) */
+	dw1000_write_16bit_reg(lp, AON_ID, AON_WCFG_OFFSET, 0x00);
+
+	/* Clear the wake-up configuration */
+	dw1000_write_8bit_reg(lp, AON_ID, AON_CFG0_OFFSET, 0x00);
+
+	/* Upload the new configuration */
+	_dw1000_upload_aon_array(lp);
+
+	/* Reset HIF, TX, RX and PMSC */
+	dw1000_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_ALL);
+
+	/* DW1000 needs a 10us sleep to let clk PLL lock after reset - the PLL will automatically lock after the reset
+	 * Could also have polled the PLL lock flag, but then the SPI needs to be < 3MHz !! So a simple delay is easier
+	 */
+	usleep_range(16, 20);
+
+	/* Clear reset */
+	dw1000_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_CLEAR);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_set_xtal_trim()
+ *
+ * @brief This is used to adjust the crystal frequency
+ *
+ * input parameters:
+ * @param   value - crystal trim value (in range 0x0 to 0x1F) 31 steps (~1.5ppm per step)
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void dw1000_set_xtal_trim(struct dw1000_local *lp, u8 value)
+{
+	// The 3 MSb in this 8-bit register must be kept to 0b011 to avoid any malfunction.
+	u8 reg_val = (3 << 5) | (value & FS_XTALT_MASK);
+	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_XTALT_OFFSET, reg_val);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dwt_loaducodefromrom()
+ *
+ * @brief  load ucode from OTP MEMORY or ROM
+ *
+ * input parameters
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void _dw1000_load_ucode_from_rom(struct dw1000_local *lp)
+{
+	// Set up clocks
+	_dw1000_enable_clocks(lp, FORCE_LDE);
+
+	// Kick off the LDE load
+	// Set load LDE kick bit
+	dw1000_write_16bit_reg(lp, OTP_IF_ID, OTP_CTRL, OTP_CTRL_LDELOAD);
+
+	msleep(1); // Allow time for code to upload (should take up to 120 us)
+
+	// Default clocks (ENABLE_ALL_SEQ)
+	// Enable clocks for sequencing
+	_dw1000_enable_clocks(lp, ENABLE_ALL_SEQ);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_hw_init()
+ *
+ * @brief This function initiates communications with the DW1000 transceiver
+ * and reads its DEV_ID register (address 0x00) to verify the IC is one supported
+ * by this software (e.g. DW1000 32-bit device ID value is 0xDECA0130).  Then it
+ * does any initial once only device configurations needed for use and initialises
+ * as necessary any static data items belonging to this low-level driver.
+ *
+ * NOTES:
+ * 1.this function needs to be run before dwt_configuresleep, also the SPI frequency has to be < 3MHz
+ * 2.it also reads and applies LDO tune and crystal trim values from OTP memory
+ *
+ * input parameters
+ * @param config    -   specifies what configuration to load
+ *                  DW1000_LOADUCODE     0x1 - load the LDE microcode from ROM - enabled accurate RX timestamp
+ *                  DW1000_LOADNONE      0x0 - do not load any values from OTP memory
+ *
+ * output parameters
+ *
+ * returns DWT_SUCCESS for success, or DWT_ERROR for error
+ */
+static int
+dw1000_hw_init(struct dw1000_local *lp, u16 config)
+{
+	u16 otp_addr = 0;
+	u32 ldo_tune = 0;
+
+	dev_info(printdev(lp), "%s\n", __func__);
+
+	lp->pdata.dblbuffon = 0; /* Double buffer mode off by default */
+	lp->pdata.wait4resp = 0;
+	lp->pdata.sleep_mode = 0;
+
+//	lp->pdata.cbTxDone = NULL;
+//	lp->pdata.cbRxOk = NULL;
+//	lp->pdata.cbRxTo = NULL;
+//	lp->pdata.cbRxErr = NULL;
+
+	/* Make sure the device is completely reset before starting initialisation */
+	dw1000_soft_reset(lp);
+
+	/* NOTE: set system clock to XTI - this is necessary to make sure the values read by _dwt_otpread are reliable */
+	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
+
+	/* Configure the CPLL lock detect */
+	dw1000_write_8bit_reg(lp, EXT_SYNC_ID, EC_CTRL_OFFSET, EC_CTRL_PLLLCK);
+
+	/* Read OTP revision number */
+	// Read 32 bit value, XTAL trim val is in low octet-0 (5 bits)
+	// TODO: otp_addr u16 or u32
+	_dw1000_read_otp(lp, XTRIM_ADDRESS, (u32*) &otp_addr);
+	otp_addr = otp_addr & 0xffff;
+
+	// OTP revision is next byte
+	lp->pdata.otprev = (otp_addr >> 8) & 0xff;
+
+	// Load LDO tune from OTP and kick it if there is a value actually programmed.
+	_dw1000_read_otp(lp, LDOTUNE_ADDRESS, &ldo_tune);
+	if ((ldo_tune & 0xFF) != 0) {
+		// Kick LDO tune
+		// Set load LDE kick bit
+		dw1000_write_8bit_reg(lp, OTP_IF_ID, OTP_SF, OTP_SF_LDO_KICK);
+		// LDO tune must be kicked at wake-up
+		lp->pdata.sleep_mode |= AON_WCFG_ONW_LLDO;
+	}
+
+	// Load Part and Lot ID from OTP
+	_dw1000_read_otp(lp, PARTID_ADDRESS, &lp->pdata.partID);
+	_dw1000_read_otp(lp, LOTID_ADDRESS, &lp->pdata.lotID);
+
+	// XTAL trim value is set in OTP for DW1000 module and EVK/TREK boards but that might not be the case in a custom design
+	lp->pdata.init_xtrim = otp_addr & 0x1F;
+	// A value of 0 means that the crystal has not been trimmed
+	if (!lp->pdata.init_xtrim) {
+		// Set to mid-range if no calibration value inside
+		lp->pdata.init_xtrim = FS_XTALT_MIDRANGE;
+	}
+
+	// Configure XTAL trim
+	dw1000_set_xtal_trim(lp, lp->pdata.init_xtrim);
+
+	// Load leading edge detect code
+	if (config & DW1000_LOADUCODE) {
+		_dw1000_load_ucode_from_rom(lp);
+		lp->pdata.sleep_mode |= AON_WCFG_ONW_LLDE; // microcode must be loaded at wake-up
+	} else {
+		// Should disable the LDERUN enable bit in 0x36, 0x4
+		u16 rega;
+		dw1000_read_16bit_reg(lp, PMSC_ID, PMSC_CTRL1_OFFSET + 1, &rega);
+		rega &= 0xFDFF; // Clear LDERUN bit
+		dw1000_write_16bit_reg(lp, PMSC_ID, PMSC_CTRL1_OFFSET + 1, rega);
+	}
+
+	// Enable clocks for sequencing
+	_dw1000_enable_clocks(lp, ENABLE_ALL_SEQ);
+
+	// The 3 bits in AON CFG1 register must be cleared to ensure proper operation of the DW1000 in DEEPSLEEP mode.
+	dw1000_write_8bit_reg(lp, AON_ID, AON_CFG1_OFFSET, 0x00);
+
+	// Read system register / store local copy
+	// Read sysconfig register
+	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sysCFGreg);
+
+	return DW1000_SUCCESS;
+}
+
 static int
 dw1000_detect_device(struct dw1000_local *lp)
 {
-//	unsigned int part, version, val;
-//	u16 man_id = 0;
 	const char *chip;
-//	int rc;
-	int status;
-
-	u8 data[4] = {0, 0, 0, 0};
+	int ret = 0;
 	u32 dev_id = 0;
 
-//	unsigned int reg_val = 0x0;
-
-//	int ret;
-	struct spi_message msg;
-
-	struct spi_transfer xfer_head = {
-		.len = 2,
-		.tx_buf = lp->buf,
-//		.rx_buf = priv->buf,
-	};
-	struct spi_transfer xfer_buf = {
-		.len = 4,
-		.rx_buf = data,
-	};
-
-	dev_dbg(printdev(lp), "%s\n", __func__);
-
-	spi_message_init(&msg);
-	spi_message_add_tail(&xfer_head, &msg);
-	spi_message_add_tail(&xfer_buf, &msg);
-
-	lp->buf[0] = 0x40;
-	lp->buf[1] = 0x80;
-	lp->buf[2] = 0x00;
-
-	dev_dbg(&lp->spi->dev, "read DEVID command[0] = %02x\n", lp->buf[0]);
-
-	status = spi_sync(lp->spi, &msg);
-
-	if (msg.status)
-		status = msg.status;
-	dev_dbg(&lp->spi->dev, "return data data[0] = %02x\n", data[0]);
-	dev_dbg(&lp->spi->dev, "return data data[1] = %02x\n", data[1]);
-	dev_dbg(&lp->spi->dev, "return data data[2] = %02x\n", data[2]);
-	dev_dbg(&lp->spi->dev, "return data data[3] = %02x\n", data[3]);
-
-//	dev_dbg(&lp->spi->dev, "read subreg test start >>>>>>\n");
-//
-//	dw1000_read_subreg(lp, SG_REV, &reg_val);
-//	dev_dbg(&lp->spi->dev, "SG_REV: 0x%x", reg_val);
-//
-//	dw1000_read_subreg(lp, SG_VER, &reg_val);
-//	dev_dbg(&lp->spi->dev, "SG_VER: 0x%x", reg_val);
-//
-//	dev_dbg(&lp->spi->dev, "read subreg test stop <<<<<<\n");
+	dev_info(printdev(lp), "%s\n", __func__);
 
 	dw1000_read_32bit_reg(lp, RG_DEV_ID, 0, &dev_id);
-	dev_dbg(&lp->spi->dev, "DEV_ID:0x%x\n", dev_id);
 
+	// Read and validate device ID return -1 if not recognised
+	if (DW1000_DEVICE_ID != dev_id) { // MP IC ONLY (i.e. DW1000) FOR THIS CODE
+		goto not_supp;
+	}
 
 	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM |
 			IEEE802154_HW_CSMA_PARAMS |
@@ -815,27 +1317,25 @@ dw1000_detect_device(struct dw1000_local *lp)
 		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
 
 	lp->hw->phy->cca.mode = NL802154_CCA_ENERGY;
-		chip = "dw1000";
-//		lp->data = &at86rf212_data;
-		lp->hw->flags |= IEEE802154_HW_LBT;
-		lp->hw->phy->supported.channels[4] = 0x1e;
-		lp->hw->phy->current_channel = 1;
-		lp->hw->phy->current_page = 4;
-		lp->hw->phy->symbol_duration = 25;
-		lp->hw->phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
-		lp->hw->phy->supported.tx_powers = dw1000_powers;
-		lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
-		lp->hw->phy->supported.cca_ed_levels = dw1000_ed_levels;
-		lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
+	chip = "dw1000";
+	lp->hw->flags |= IEEE802154_HW_LBT;
+	lp->hw->phy->supported.channels[4] = 0x1e;
+	lp->hw->phy->current_channel = 1;
+	lp->hw->phy->current_page = 4;
+	lp->hw->phy->symbol_duration = 25;
+	lp->hw->phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
+	lp->hw->phy->supported.tx_powers = dw1000_powers;
+	lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
+	lp->hw->phy->supported.cca_ed_levels = dw1000_ed_levels;
+	lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
 
 	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
 	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
 
-//not_supp:
-//	dev_info(&lp->spi->dev, "Detected %s chip version %d\n", chip, version);
+not_supp:
+	dev_info(&lp->spi->dev, "Detected %s chip id 0x%x\n", chip, dev_id);
 
-//	return rc;
-	return 0;
+	return ret;
 }
 
 static int dw1000_probe(struct spi_device *spi)
@@ -925,7 +1425,7 @@ static int dw1000_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, lp);
 
-	rc = dw1000_hw_init(lp);
+	rc = dw1000_hw_init(lp, DW1000_LOADUCODE);
 	if (rc)
 		goto free_dev;
 
