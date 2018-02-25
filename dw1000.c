@@ -176,6 +176,166 @@
 // Call-back data RX frames flags
 #define DW100_CB_DATA_RX_FLAG_RNG 0x1 // Ranging bit
 
+#define NUM_BR 3
+#define NUM_PRF 2
+#define NUM_PACS 4
+#define NUM_BW 2            //2 bandwidths are supported
+#define NUM_SFD 2           //supported number of SFDs - standard = 0, non-standard = 1
+#define NUM_CH 6            //supported channels are 1, 2, 3, 4, 5, 7
+#define NUM_CH_SUPPORTED 8  //supported channels are '0', 1, 2, 3, 4, 5, '6', 7
+#define PCODES 25           //supported preamble codes
+
+#define PEAK_MULTPLIER  (0x60) //3 -> (0x3 * 32) & 0x00E0
+#define N_STD_FACTOR    (13)
+#define LDE_PARAM1      (PEAK_MULTPLIER | N_STD_FACTOR)
+
+#define LDE_PARAM3_16 (0x1607)
+#define LDE_PARAM3_64 (0x0607)
+
+#define MIXER_GAIN_STEP (0.5)
+#define DA_ATTN_STEP    (2.5)
+
+//-----------------------------------------
+// map the channel number to the index in the configuration arrays below
+// 0th element is chan 1, 1st is chan 2, 2nd is chan 3, 3rd is chan 4, 4th is chan 5, 5th is chan 7
+const u8 chan_idx[NUM_CH_SUPPORTED] = { 0, 0, 1, 2, 3, 4, 0, 5 };
+
+//-----------------------------------------
+const u32 tx_config[NUM_CH] =
+{
+	RF_TXCTRL_CH1,
+	RF_TXCTRL_CH2,
+	RF_TXCTRL_CH3,
+	RF_TXCTRL_CH4,
+	RF_TXCTRL_CH5,
+	RF_TXCTRL_CH7,
+};
+
+//Frequency Synthesiser - PLL configuration
+const u32 fs_pll_cfg[NUM_CH] =
+{
+	FS_PLLCFG_CH1,
+	FS_PLLCFG_CH2,
+	FS_PLLCFG_CH3,
+	FS_PLLCFG_CH4,
+	FS_PLLCFG_CH5,
+	FS_PLLCFG_CH7
+};
+
+//Frequency Synthesiser - PLL tuning
+const u8 fs_pll_tune[NUM_CH] =
+{
+	FS_PLLTUNE_CH1,
+	FS_PLLTUNE_CH2,
+	FS_PLLTUNE_CH3,
+	FS_PLLTUNE_CH4,
+	FS_PLLTUNE_CH5,
+	FS_PLLTUNE_CH7
+};
+
+//bandwidth configuration
+const u8 rx_config[NUM_BW] =
+{
+	RF_RXCTRLH_NBW,
+	RF_RXCTRLH_WBW
+};
+
+struct agc_cfg_struct {
+	u32 lo32;
+	u16 target[NUM_PRF];
+};
+
+const struct agc_cfg_struct agc_config =
+{
+	AGC_TUNE2_VAL,
+	{ AGC_TUNE1_16M, AGC_TUNE1_64M }  //adc target
+};
+
+//DW1000 non-standard SFD length for 110k, 850k and 6.81M
+const u8 dw_ns_SFD_len[NUM_BR] =
+{
+	DW_NS_SFD_LEN_110K,
+	DW_NS_SFD_LEN_850K,
+	DW_NS_SFD_LEN_6M8
+};
+
+// SFD Threshold
+const u16 sftsh[NUM_BR][NUM_SFD] =
+{
+	{
+		DRX_TUNE0b_110K_STD,
+		DRX_TUNE0b_110K_NSTD
+	},
+	{
+		DRX_TUNE0b_850K_STD,
+		DRX_TUNE0b_850K_NSTD
+	},
+	{
+		DRX_TUNE0b_6M8_STD,
+		DRX_TUNE0b_6M8_NSTD
+	}
+};
+
+const u16 dtune1[NUM_PRF] =
+{
+	DRX_TUNE1a_PRF16,
+	DRX_TUNE1a_PRF64
+};
+
+const u32 digital_bb_config[NUM_PRF][NUM_PACS] =
+{
+	{
+		DRX_TUNE2_PRF16_PAC8,
+		DRX_TUNE2_PRF16_PAC16,
+		DRX_TUNE2_PRF16_PAC32,
+		DRX_TUNE2_PRF16_PAC64
+	},
+	{
+		DRX_TUNE2_PRF64_PAC8,
+		DRX_TUNE2_PRF64_PAC16,
+		DRX_TUNE2_PRF64_PAC32,
+		DRX_TUNE2_PRF64_PAC64
+	}
+};
+
+const u16 lde_replicaCoeff[PCODES] =
+{
+	0, // No preamble code 0
+	LDE_REPC_PCODE_1,
+	LDE_REPC_PCODE_2,
+	LDE_REPC_PCODE_3,
+	LDE_REPC_PCODE_4,
+	LDE_REPC_PCODE_5,
+	LDE_REPC_PCODE_6,
+	LDE_REPC_PCODE_7,
+	LDE_REPC_PCODE_8,
+	LDE_REPC_PCODE_9,
+	LDE_REPC_PCODE_10,
+	LDE_REPC_PCODE_11,
+	LDE_REPC_PCODE_12,
+	LDE_REPC_PCODE_13,
+	LDE_REPC_PCODE_14,
+	LDE_REPC_PCODE_15,
+	LDE_REPC_PCODE_16,
+	LDE_REPC_PCODE_17,
+	LDE_REPC_PCODE_18,
+	LDE_REPC_PCODE_19,
+	LDE_REPC_PCODE_20,
+	LDE_REPC_PCODE_21,
+	LDE_REPC_PCODE_22,
+	LDE_REPC_PCODE_23,
+	LDE_REPC_PCODE_24
+};
+
+const double txpwr_compensation[NUM_CH] = {
+	0.0,
+	0.035,
+	0.0,
+	0.0,
+	0.065,
+	0.0
+};
+
 // Structure to hold device data
 struct dw1000_data {
        u32 partID;	// IC Part ID - read during initialisation
@@ -1080,6 +1240,28 @@ _dw1000_disable_sequencing(struct dw1000_local *lp)
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_config_lde / _dwt_configlde()
+ *
+ * @brief configure LDE algorithm parameters
+ *
+ * input parameters
+ * @param prf   -   this is the PRF index (0 or 1) 0 corresponds to 16 and 1 to 64 PRF
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void _dw1000_config_lde(struct dw1000_local *lp, int prf_index) {
+	dw1000_write_8bit_reg(lp, LDE_IF_ID, LDE_CFG1_OFFSET, LDE_PARAM1); // 8-bit configuration register
+
+	if (prf_index) {
+		dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_CFG2_OFFSET, (u16)LDE_PARAM3_64); // 16-bit LDE configuration tuning register
+	} else {
+		dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_CFG2_OFFSET, (u16)LDE_PARAM3_16);
+	}
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
  * @fn _dw1000_upload_aon_config()
  *
  * @brief This function uploads always on (AON) configuration, as set in the AON_CFG0_OFFSET register.
@@ -1294,6 +1476,136 @@ static void dw1000_debugfs_remove(void)
 //#endif
 
 /*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_configure / dwt_configure()
+ *
+ * @brief This function provides the main API for the configuration of the
+ * DW1000 and this low-level driver.  The input is a pointer to the data structure
+ * of type dwt_config_t that holds all the configurable items.
+ * The dwt_config_t structure shows which ones are supported
+ *
+ * input parameters
+ * @param config    -   pointer to the configuration structure, which contains the device configuration data.
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void dw1000_configure(struct dw1000_local *lp) {
+	struct dw1000_config *config = &lp->config;
+	u8 nsSfd_result  = 0;
+	u8 useDWnsSFD = 0;
+	u8 chan = config->chan;
+	u32 regval;
+	u16 reg16 = lde_replicaCoeff[config->rxCode];
+	u8 prfIndex = config->prf - DW1000_PRF_16M;
+	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
+
+//#ifdef DWT_API_ERROR_CHECK
+//	assert(config->dataRate <= DWT_BR_6M8);
+//	assert(config->rxPAC <= DWT_PAC64);
+//	assert((chan >= 1) && (chan <= 7) && (chan != 6));
+//	assert(((config->prf == DWT_PRF_64M) && (config->txCode >= 9) && (config->txCode <= 24))
+//		|| ((config->prf == DWT_PRF_16M) && (config->txCode >= 1) && (config->txCode <= 8)));
+//	assert(((config->prf == DWT_PRF_64M) && (config->rxCode >= 9) && (config->rxCode <= 24))
+//		|| ((config->prf == DWT_PRF_16M) && (config->rxCode >= 1) && (config->rxCode <= 8)));
+//	assert((config->txPreambLength == DWT_PLEN_64) || (config->txPreambLength == DWT_PLEN_128) || (config->txPreambLength == DWT_PLEN_256)
+//		|| (config->txPreambLength == DWT_PLEN_512) || (config->txPreambLength == DWT_PLEN_1024) || (config->txPreambLength == DWT_PLEN_1536)
+//		|| (config->txPreambLength == DWT_PLEN_2048) || (config->txPreambLength == DWT_PLEN_4096));
+//	assert((config->phrMode == DWT_PHRMODE_STD) || (config->phrMode == DWT_PHRMODE_EXT));
+//#endif
+
+	// For 110 kbps we need a special setup
+	if (DW1000_BR_110K == config->dataRate) {
+		lp->pdata.sysCFGreg |= SYS_CFG_RXM110K;
+		reg16 >>= 3; // lde_replicaCoeff must be divided by 8
+	} else {
+		lp->pdata.sysCFGreg &= (~SYS_CFG_RXM110K);
+	}
+
+	lp->pdata.longFrames = config->phrMode;
+
+	lp->pdata.sysCFGreg &= ~SYS_CFG_PHR_MODE_11;
+	lp->pdata.sysCFGreg |= (SYS_CFG_PHR_MODE_11 & (config->phrMode << SYS_CFG_PHR_MODE_SHFT));
+
+	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sysCFGreg);
+	// Set the lde_replicaCoeff
+	dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_REPC_OFFSET, reg16);
+
+	_dw1000_config_lde(lp, prfIndex);
+
+	// Configure PLL2/RF PLL block CFG/TUNE (for a given channel)
+	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, fs_pll_cfg[chan_idx[chan]]);
+	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, fs_pll_tune[chan_idx[chan]]);
+
+	// Configure RF RX blocks (for specified channel/bandwidth)
+	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, rx_config[bw]);
+
+	// Configure RF TX blocks (for specified channel and PRF)
+	// Configure RF TX control
+	dw1000_write_32bit_reg(lp, RF_CONF_ID, RF_TXCTRL_OFFSET, tx_config[chan_idx[chan]]);
+
+	// Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings)
+	// DTUNE0
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, sftsh[config->dataRate][config->nsSFD]);
+
+	// DTUNE1
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, dtune1[prfIndex]);
+
+	if (config->dataRate == DW1000_BR_110K) {
+		dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_110K);
+	} else {
+		if (config->txPreambLength == DW1000_PLEN_64) {
+			dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_6M8_PRE64);
+			dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE4H_OFFSET, DRX_TUNE4H_PRE64);
+		} else {
+			dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_850K_6M8);
+			dw1000_write_8bit_reg(lp, DRX_CONF_ID, DRX_TUNE4H_OFFSET, DRX_TUNE4H_PRE128PLUS);
+		}
+	}
+
+	// DTUNE2
+	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, digital_bb_config[prfIndex][config->rxPAC]);
+
+	// DTUNE3 (SFD timeout)
+	// Don't allow 0 - SFD timeout will always be enabled
+	if (config->sfdTO == 0) {
+		config->sfdTO = DW1000_SFDTOC_DEF;
+	}
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfdTO);
+
+	// Configure AGC parameters
+	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, agc_config.lo32);
+	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, agc_config.target[prfIndex]);
+
+	// Set (non-standard) user SFD for improved performance,
+	if (config->nsSFD) {
+		// Write non standard (DW) SFD length
+		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->dataRate]);
+		nsSfd_result = 3;
+		useDWnsSFD = 1;
+	}
+	regval =  (CHAN_CTRL_TX_CHAN_MASK & (chan << CHAN_CTRL_TX_CHAN_SHIFT)) | // Transmit Channel
+		(CHAN_CTRL_RX_CHAN_MASK & (chan << CHAN_CTRL_RX_CHAN_SHIFT)) | // Receive Channel
+		(CHAN_CTRL_RXFPRF_MASK & (config->prf << CHAN_CTRL_RXFPRF_SHIFT)) | // RX PRF
+		((CHAN_CTRL_TNSSFD | CHAN_CTRL_RNSSFD) & (nsSfd_result << CHAN_CTRL_TNSSFD_SHIFT)) | // nsSFD enable RX&TX
+		(CHAN_CTRL_DWSFD & (useDWnsSFD << CHAN_CTRL_DWSFD_SHIFT)) | // Use DW nsSFD
+		(CHAN_CTRL_TX_PCOD_MASK & (config->txCode << CHAN_CTRL_TX_PCOD_SHIFT)) | // TX Preamble Code
+		(CHAN_CTRL_RX_PCOD_MASK & (config->rxCode << CHAN_CTRL_RX_PCOD_SHIFT)); // RX Preamble Code
+
+	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
+
+	// Set up TX Preamble Size, PRF and Data Rate
+	lp->pdata.txFCTRL = ((config->txPreambLength | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->dataRate << TX_FCTRL_TXBR_SHFT);
+	dw1000_write_32bit_reg(lp, TX_FCTRL_ID, 0, lp->pdata.txFCTRL);
+
+	// The SFD transmit pattern is initialised by the DW1000 upon a user TX request, but (due to an IC issue) it is not done for an auto-ACK TX. The
+	// SYS_CTRL write below works around this issue, by simultaneously initiating and aborting a transmission, which correctly initialises the SFD
+	// after its configuration or reconfiguration.
+	// This issue is not documented at the time of writing this code. It should be in next release of DW1000 User Manual (v2.09, from July 2016).
+	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_TXSTRT | SYS_CTRL_TRXOFF); // Request TX start and TRX off at the same time
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
  * @fn dw1000_hw_init()
  *
  * @brief This function initiates communications with the DW1000 transceiver
@@ -1339,9 +1651,9 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	lp->config.txCode = 9;				/* TX preamble code. Used in TX only. */
 	lp->config.rxCode = 9;				/* RX preamble code. Used in RX only. */
 	lp->config.nsSFD = 0; 				/* 0 to use standard SFD, 1 to use non-standard SFD. */
-	lp->config.dataRate = DW1000_BR_110K;              /* Data rate. */
-	lp->config.phrMode = DW1000_PHRMODE_STD;           /* PHY header mode. */
-	lp->config.sfdTO = (1025 + 64 - 32);            /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+	lp->config.dataRate = DW1000_BR_110K;		/* Data rate. */
+	lp->config.phrMode = DW1000_PHRMODE_STD;	/* PHY header mode. */
+	lp->config.sfdTO = (1025 + 64 - 32);		/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	/* Make sure the device is completely reset before starting initialisation */
 	dw1000_soft_reset(lp);
