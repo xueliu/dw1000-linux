@@ -129,13 +129,13 @@
 #define DW1000_LEDS_INIT_BLINK  0x02
 
 //frame filtering configuration options
-#define DW1000_FF_NOTYPE_EN            0x000           // no frame types allowed (FF disabled)
-#define DW1000_FF_COORD_EN             0x002           // behave as coordinator (can receive frames with no dest address (PAN ID has to match))
-#define DW1000_FF_BEACON_EN            0x004           // beacon frames allowed
-#define DW1000_FF_DATA_EN              0x008           // data frames allowed
-#define DW1000_FF_ACK_EN               0x010           // ack frames allowed
-#define DW1000_FF_MAC_EN               0x020           // mac control frames allowed
-#define DW1000_FF_RSVD_EN              0x040           // reserved frame types allowed
+#define DW1000_FF_NOTYPE_EN	0x000	// no frame types allowed (FF disabled)
+#define DW1000_FF_COORD_EN	0x002	// behave as coordinator (can receive frames with no dest address (PAN ID has to match))
+#define DW1000_FF_BEACON_EN	0x004	// beacon frames allowed
+#define DW1000_FF_DATA_EN	0x008	// data frames allowed
+#define DW1000_FF_ACK_EN	0x010	// ack frames allowed
+#define DW1000_FF_MAC_EN	0x020	// mac control frames allowed
+#define DW1000_FF_RSVD_EN	0x040	// reserved frame types allowed
 
 //DW1000 interrupt events
 #define DW1000_INT_TFRS            0x00000080          // frame sent
@@ -177,18 +177,17 @@
 #define DW100_CB_DATA_RX_FLAG_RNG 0x1 // Ranging bit
 
 // Structure to hold device data
-struct dw1000_data
-{
-	u32      partID;            // IC Part ID - read during initialisation
-	u32      lotID;             // IC Lot ID - read during initialisation
-	u8       longFrames;        // Flag in non-standard long frame mode
-	u8       otprev;            // OTP revision number (read during initialisation)
-	u32      txFCTRL;           // Keep TX_FCTRL register config
-	u8       init_xtrim;         // initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed)
-	u8       dblbuffon;          // Double RX buffer mode flag
-	u32      sysCFGreg;         // Local copy of system config register
-	u16      sleep_mode;         // Used for automatic reloading of LDO tune and microcode at wake-up
-	u8       wait4resp;         // wait4response was set with last TX start command
+struct dw1000_data {
+       u32 partID;	// IC Part ID - read during initialisation
+       u32 lotID;	// IC Lot ID - read during initialisation
+       u8 longFrames;	// Flag in non-standard long frame mode
+       u8 otprev;	// OTP revision number (read during initialisation)
+       u32 txFCTRL;	// Keep TX_FCTRL register config
+       u8 init_xtrim;	// initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed)
+       u8 dblbuffon;	// Double RX buffer mode flag
+       u32 sysCFGreg;	// Local copy of system config register
+       u16 sleep_mode;	// Used for automatic reloading of LDO tune and microcode at wake-up
+       u8 wait4resp;	// wait4response was set with last TX start command
 //	dwt_cb_data_t cbData;           // Callback data structure
 //	dwt_cb_t    cbTxDone;           // Callback for TX confirmation event
 //	dwt_cb_t    cbRxOk;             // Callback for RX good frame event
@@ -196,10 +195,30 @@ struct dw1000_data
 //	dwt_cb_t    cbRxErr;            // Callback for RX error events
 };
 
+/*! ------------------------------------------------------------------------------------------------------------------
+ * Structure typedef: dwt_config_t
+ *
+ * Structure for setting device configuration via dwt_configure() function
+ *
+ */
+struct dw1000_config {
+	u8 chan;           //!< channel number {1, 2, 3, 4, 5, 7 }
+	u8 prf;            //!< Pulse Repetition Frequency {DWT_PRF_16M or DWT_PRF_64M}
+	u8 txPreambLength; //!< DWT_PLEN_64..DWT_PLEN_4096
+	u8 rxPAC;          //!< Acquisition Chunk Size (Relates to RX preamble length)
+	u8 txCode;         //!< TX preamble code
+	u8 rxCode;         //!< RX preamble code
+	u8 nsSFD;          //!< Boolean should we use non-standard SFD for better performance
+	u8 dataRate;       //!< Data Rate {DWT_BR_110K, DWT_BR_850K or DWT_BR_6M8}
+	u8 phrMode;        //!< PHR mode {0x0 - standard DWT_PHRMODE_STD, 0x3 - extended frames DWT_PHRMODE_EXT}
+	u16 sfdTO;         //!< SFD timeout value (in symbols)
+};
+
 struct dw1000_local {
 	struct spi_device *spi;
 
 	struct dw1000_data pdata;
+	struct dw1000_config config;
 
 	struct ieee802154_hw *hw;
 	struct regmap *regmap;
@@ -1050,7 +1069,8 @@ dw1000_get_pdata(struct spi_device *spi, int *rstn)
  *
  * no return value
  */
-void _dw1000_disable_sequencing(struct dw1000_local *lp)
+static void
+_dw1000_disable_sequencing(struct dw1000_local *lp)
 {
 	/* Set system clock to XTI */
 	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
@@ -1179,6 +1199,100 @@ void _dw1000_load_ucode_from_rom(struct dw1000_local *lp)
 	_dw1000_enable_clocks(lp, ENABLE_ALL_SEQ);
 }
 
+//#ifdef CONFIG_IEEE802154_DW1000_DEBUGFS
+static struct dentry *dw1000_debugfs_root;
+
+static int dw1000_configs_show(struct seq_file *file, void *offset)
+{
+//	struct dw1000_local *lp = file->private;
+
+//	seq_printf(file, "SUCCESS:\t\t%8llu\n", lp->trac.success);
+//	seq_printf(file, "SUCCESS_DATA_PENDING:\t%8llu\n",
+//		   lp->trac.success_data_pending);
+//	seq_printf(file, "SUCCESS_WAIT_FOR_ACK:\t%8llu\n",
+//		   lp->trac.success_wait_for_ack);
+//	seq_printf(file, "CHANNEL_ACCESS_FAILURE:\t%8llu\n",
+//		   lp->trac.channel_access_failure);
+//	seq_printf(file, "NO_ACK:\t\t\t%8llu\n", lp->trac.no_ack);
+//	seq_printf(file, "INVALID:\t\t%8llu\n", lp->trac.invalid);
+	return 0;
+}
+
+static int dw1000_configs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dw1000_configs_show, inode->i_private);
+}
+
+static const struct file_operations dw1000_configs_fops = {
+	.open		= dw1000_configs_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int dw1000_dev_data_show(struct seq_file *file, void *offset)
+{
+	struct dw1000_local *lp = file->private;
+
+	seq_printf(file, "IC Part ID:\t\t0x%x\n", lp->pdata.partID);
+	seq_printf(file, "IC Lot ID:\t0x%x\n", lp->pdata.lotID);
+	seq_printf(file, "Non-standard Long Frame Mode:\t%d\n", lp->pdata.longFrames);
+	seq_printf(file, "OTP Revision Number:\t0x%x\n", lp->pdata.otprev);
+	seq_printf(file, "TX_FCTRL Reg:\t\t\t0x%x\n", lp->pdata.txFCTRL);
+	seq_printf(file, "Initial XTAL Trim Value:\t\t%d\n", lp->pdata.init_xtrim);
+	seq_printf(file, "Double RX Buffer Mode:\t\t%d\n", lp->pdata.dblbuffon);
+	seq_printf(file, "System Config Reg:\t\t0x%x\n", lp->pdata.sysCFGreg);
+	seq_printf(file, "Sleep Mode:\t\t%d\n", lp->pdata.sleep_mode);
+	return 0;
+}
+
+static int dw1000_dev_data_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dw1000_dev_data_show, inode->i_private);
+}
+
+static const struct file_operations dw1000_dev_data_fops = {
+	.open		= dw1000_dev_data_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int dw1000_debugfs_init(struct dw1000_local *lp)
+{
+	char debugfs_dir_name[DNAME_INLINE_LEN + 1] = "dw1000-";
+	struct dentry *stats;
+
+	strncat(debugfs_dir_name, dev_name(&lp->spi->dev), DNAME_INLINE_LEN);
+
+	dw1000_debugfs_root = debugfs_create_dir(debugfs_dir_name, NULL);
+	if (!dw1000_debugfs_root)
+		return -ENOMEM;
+
+	stats = debugfs_create_file("configurations", S_IRUGO,
+		dw1000_debugfs_root, lp,
+		&dw1000_configs_fops);
+	if (!stats)
+		return -ENOMEM;
+
+	stats = debugfs_create_file("device_data", S_IRUGO,
+		dw1000_debugfs_root, lp,
+		&dw1000_dev_data_fops);
+	if (!stats)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static void dw1000_debugfs_remove(void)
+{
+	debugfs_remove_recursive(dw1000_debugfs_root);
+}
+//#else
+//static int at86rf230_debugfs_init(struct at86rf230_local *lp) { return 0; }
+//static void at86rf230_debugfs_remove(void) { }
+//#endif
+
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn dw1000_hw_init()
  *
@@ -1217,6 +1331,17 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 //	lp->pdata.cbRxOk = NULL;
 //	lp->pdata.cbRxTo = NULL;
 //	lp->pdata.cbRxErr = NULL;
+
+	lp->config.chan = 2;				/* Channel number. */
+	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
+	lp->config.txPreambLength = DW1000_PLEN_1024;	/* Preamble length. Used in TX only. */
+	lp->config.rxPAC = DW1000_PAC32;		/* Preamble acquisition chunk size. Used in RX only. */
+	lp->config.txCode = 9;				/* TX preamble code. Used in TX only. */
+	lp->config.rxCode = 9;				/* RX preamble code. Used in RX only. */
+	lp->config.nsSFD = 0; 				/* 0 to use standard SFD, 1 to use non-standard SFD. */
+	lp->config.dataRate = DW1000_BR_110K;              /* Data rate. */
+	lp->config.phrMode = DW1000_PHRMODE_STD;           /* PHY header mode. */
+	lp->config.sfdTO = (1025 + 64 - 32);            /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	/* Make sure the device is completely reset before starting initialisation */
 	dw1000_soft_reset(lp);
@@ -1449,11 +1574,18 @@ static int dw1000_probe(struct spi_device *spi)
 	/* going into sleep by default */
 	//dw1000_sleep(lp);
 
-	rc = ieee802154_register_hw(lp->hw);
+	rc = dw1000_debugfs_init(lp);
 	if (rc)
 		goto free_dev;
 
+	rc = ieee802154_register_hw(lp->hw);
+	if (rc)
+		goto free_debugfs;
+
 	return rc;
+
+free_debugfs:
+	dw1000_debugfs_remove();
 
 free_dev:
 	ieee802154_free_hw(lp->hw);
@@ -1466,8 +1598,11 @@ dw1000_remove(struct spi_device *spi)
 {
 	struct dw1000_local *lp = spi_get_drvdata(spi);
 
+	// TODO: how to disbale the chip
 	ieee802154_unregister_hw(lp->hw);
 	ieee802154_free_hw(lp->hw);
+
+	dw1000_debugfs_remove();
 	dev_info(&spi->dev, "unregistered dw1000\n");
 
 	return 0;
@@ -1497,5 +1632,5 @@ static struct spi_driver dw1000_driver = {
 
 module_spi_driver(dw1000_driver);
 
-MODULE_DESCRIPTION("DW1000 IEEE 802.15.4 Transceiver Driver");
+MODULE_DESCRIPTION("DW1000 IEEE 802.15.4 UWB Transceiver Driver");
 MODULE_LICENSE("GPL v2");
