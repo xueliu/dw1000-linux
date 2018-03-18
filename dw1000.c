@@ -461,7 +461,7 @@ enum {
 
 
 /*! ------------------------------------------------------------------------------------------------------------------
- * @fn dw1000_read_reg()
+ * @fn dw1000_read_reg() / dwt_readfromdevice
  *
  * @brief  this function is used to read from the DW1000 device registers
  * Notes:
@@ -832,7 +832,7 @@ _dw1000_read_otp(struct dw1000_local *lp, u16 address, u32 *data)
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
- * @fn dw1000_read_otp()
+ * @fn dw1000_read_otp() / dwt_otpread()
  *
  * @brief This is used to read the OTP data from given address into provided array
  *
