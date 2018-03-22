@@ -16,15 +16,13 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
 #include <linux/skbuff.h>
-#include <linux/of_gpio.h>
-#include <linux/regmap.h>
 #include <linux/ieee802154.h>
 #include <linux/debugfs.h>
+#include <linux/gpio/consumer.h>
 
 #include <net/mac802154.h>
 #include <net/cfg802154.h>
@@ -687,39 +685,6 @@ dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data)
 	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
 }
 
-static int
-dw1000_regmap_write(void *context, const void *data,
-			       size_t count)
-{
-	struct spi_device *spi = context;
-	u8 buf[3];
-
-	if (count > 3)
-		return -EINVAL;
-
-	memcpy(buf, data, count);
-	buf[1] |= (1 << 4);
-
-	return spi_write(spi, buf, count);
-}
-
-static int
-dw1000_regmap_read(void *context, const void *reg, size_t reg_size,
-		   void *val, size_t val_size)
-{
-	struct spi_device *spi = context;
-
-	return spi_write_then_read(spi, reg, reg_size, val, val_size);
-}
-
-
-static const struct regmap_bus dw1000_regmap_bus = {
-	.write = dw1000_regmap_write,
-	.read = dw1000_regmap_read,
-	.reg_format_endian_default = REGMAP_ENDIAN_BIG,
-	.val_format_endian_default = REGMAP_ENDIAN_BIG,
-};
-
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn _dw1000_enable_clocks()
  *
@@ -1186,36 +1151,6 @@ dw1000_setup_reg_messages(struct dw1000_local *lp)
 	spi_message_add_tail(&lp->reg_addr_xfer, &lp->reg_msg);
 	spi_message_add_tail(&lp->reg_val_xfer, &lp->reg_msg);
 }
-
-static int
-dw1000_get_pdata(struct spi_device *spi, int *rstn)
-{
-//	struct dw1000_platform_data *pdata = spi->dev.platform_data;
-//	int ret;
-//
-	dev_info(&spi->dev, "%s\n", __func__);
-
-//	if (!IS_ENABLED(CONFIG_OF) || !spi->dev.of_node) {
-//		if (!pdata)
-//			return -ENOENT;
-//
-//		*rstn = pdata->rstn;
-//		*slp_tr = pdata->slp_tr;
-//		*xtal_trim = pdata->xtal_trim;
-//		return 0;
-//	}
-//
-//	*rstn = of_get_named_gpio(spi->dev.of_node, "reset-gpio", 0);
-//	*slp_tr = of_get_named_gpio(spi->dev.of_node, "sleep-gpio", 0);
-//	ret = of_property_read_u8(spi->dev.of_node, "xtal-trim", xtal_trim);
-//	if (ret < 0 && ret != -EINVAL)
-//		return ret;
-
-	*rstn = 27;
-
-	return 0;
-}
-
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn _dw1000_disable_sequencing()
@@ -1780,7 +1715,8 @@ static int dw1000_probe(struct spi_device *spi)
 	struct ieee802154_hw *hw;
 	struct dw1000_local *lp;
 //	unsigned int status;
-	int rc, irq_type, rstn;
+	struct gpio_desc *rstn;
+	int rc;
 
 	dev_info(&spi->dev, "%s\n", __func__);
 
@@ -1789,41 +1725,19 @@ static int dw1000_probe(struct spi_device *spi)
 		return -EINVAL;
 	}
 
-	rc = dw1000_get_pdata(spi, &rstn);
-	if (rc < 0) {
-		dev_err(&spi->dev, "failed to parse platform_data: %d\n", rc);
+	rstn = devm_gpiod_get(&spi->dev, "rstn", GPIOD_OUT_LOW);
+	if (IS_ERR(rstn)) {
+		rc = PTR_ERR(rstn);
+		if (rc != -EPROBE_DEFER)
+			dev_err(&spi->dev, "Failed to get 'rstn' gpio: %d", rc);
 		return rc;
 	}
 
-	if (gpio_is_valid(rstn)) {
-		rc = devm_gpio_request_one(&spi->dev, rstn,
-					   GPIOF_OUT_INIT_HIGH, "rstn");
-		if (rc)
-			return rc;
-	}
-
-//	if (gpio_is_valid(exton)) {
-//		rc = devm_gpio_request_one(&spi->dev, exton,
-//					   GPIOF_OUT_INIT_LOW, "exton");
-//		if (rc)
-//			return rc;
-//	}
-//
-//	if (gpio_is_valid(wakeup)) {
-//		rc = devm_gpio_request_one(&spi->dev, wakeup,
-//					   GPIOF_OUT_INIT_LOW, "wakeup");
-//		if (rc)
-//			return rc;
-//	}
-
 	/* Reset */
-	if (gpio_is_valid(rstn)) {
-		udelay(1);
-		gpio_set_value_cansleep(rstn, 0);
-		udelay(1);
-		gpio_set_value_cansleep(rstn, 1);
-		usleep_range(120, 240);
-	}
+	gpiod_set_value_cansleep(rstn, 1);
+	udelay(1);
+	gpiod_set_value_cansleep(rstn, 0);
+	usleep_range(120, 240);
 
 	hw = ieee802154_alloc_hw(sizeof(*lp), &dw1000_ops);
 	if (!hw)
@@ -1871,12 +1785,9 @@ static int dw1000_probe(struct spi_device *spi)
 //	if (rc)
 //		goto free_dev;
 
-	irq_type = irq_get_trigger_type(spi->irq);
-	if (!irq_type)
-		irq_type = IRQF_TRIGGER_HIGH;
-
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
-			      IRQF_SHARED | irq_type, dev_name(&spi->dev), lp);
+			      IRQF_SHARED | IRQF_TRIGGER_HIGH,
+			      dev_name(&spi->dev), lp);
 	if (rc)
 		goto free_dev;
 
@@ -1935,7 +1846,7 @@ MODULE_DEVICE_TABLE(spi, dw1000_device_id);
 static struct spi_driver dw1000_driver = {
 	.id_table = dw1000_device_id,
 	.driver = {
-		.of_match_table = of_match_ptr(dw1000_of_match),
+		.of_match_table = dw1000_of_match,
 		.name	= "dw1000",
 	},
 	.probe      = dw1000_probe,
