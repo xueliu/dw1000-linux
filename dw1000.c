@@ -517,9 +517,9 @@ dw1000_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *
 
 	header_xfer.len = cnt;
 
-	for (i = 0; i < cnt; i++) {
-		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
-	}
+//	for (i = 0; i < cnt; i++) {
+//		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
+//	}
 
 	spi_message_init(&msg);
 	spi_message_add_tail(&header_xfer, &msg);
@@ -626,7 +626,7 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 {
 	u8 header[3] = { 0, 0, 0 }; // Buffer to compose header in
 	int   cnt = 0; // Counter for length of header
-	int i;
+//	int i;
 	struct spi_message msg;
 	struct spi_transfer header_xfer = {
 		.tx_buf = header,
@@ -655,9 +655,9 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 
 	header_xfer.len = cnt;
 
-	for (i = 0; i < cnt; i++) {
-		dev_dbg(printdev(lp), "write addr[%d]:0x%x\n", i, header[i]);
-	}
+//	for (i = 0; i < cnt; i++) {
+//		dev_dbg(printdev(lp), "write addr[%d]:0x%x\n", i, header[i]);
+//	}
 
 	spi_message_init(&msg);
 	spi_message_add_tail(&header_xfer, &msg);
@@ -1676,6 +1676,7 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	// Load LDO tune from OTP and kick it if there is a value actually programmed.
 	_dw1000_read_otp(lp, LDOTUNE_ADDRESS, &ldo_tune);
 	if ((ldo_tune & 0xFF) != 0) {
+		dev_info(printdev(lp), "the device has been calibrated\n");
 		// Kick LDO tune
 		// Set load LDE kick bit
 		dw1000_write_8bit_reg(lp, OTP_IF_ID, OTP_SF, OTP_SF_LDO_KICK);
@@ -1691,9 +1692,11 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	lp->pdata.init_xtrim = otp_addr & 0x1F;
 	// A value of 0 means that the crystal has not been trimmed
 	if (!lp->pdata.init_xtrim) {
+		dev_info(printdev(lp), "the crystal has not been trimmed\n");
 		// Set to mid-range if no calibration value inside
 		lp->pdata.init_xtrim = FS_XTALT_MIDRANGE;
 	}
+	dev_info(printdev(lp), "the crystal has been trimmed\n");
 
 	// Configure XTAL trim
 	dw1000_set_xtal_trim(lp, lp->pdata.init_xtrim);
