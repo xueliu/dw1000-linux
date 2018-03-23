@@ -796,58 +796,42 @@ void _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
 {
 	u8 reg[2];
 
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	dw1000_read_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, 2, reg);
 	switch (clocks) {
 	case ENABLE_ALL_SEQ:
-		{
-			reg[0] = 0x00;
-			reg[1] = reg[1] & 0xfe;
-		}
+		reg[0] = 0x00;
+		reg[1] = reg[1] & 0xfe;
 		break;
 	case FORCE_SYS_XTI:
-		{
-			// System and RX
-			reg[0] = 0x01 | (reg[0] & 0xfc);
-		}
+		// System and RX
+		reg[0] = 0x01 | (reg[0] & 0xfc);
 		break;
 	case FORCE_SYS_PLL:
-		{
-			// System
-			reg[0] = 0x02 | (reg[0] & 0xfc);
-		}
+		// System
+		reg[0] = 0x02 | (reg[0] & 0xfc);
 		break;
 	case READ_ACC_ON:
-		{
-			reg[0] = 0x48 | (reg[0] & 0xb3);
-			reg[1] = 0x80 | reg[1];
-		}
+		reg[0] = 0x48 | (reg[0] & 0xb3);
+		reg[1] = 0x80 | reg[1];
 		break;
 	case READ_ACC_OFF:
-		{
-			reg[0] = reg[0] & 0xb3;
-			reg[1] = 0x7f & reg[1];
-		}
+		reg[0] = reg[0] & 0xb3;
+		reg[1] = 0x7f & reg[1];
 		break;
 	case FORCE_OTP_ON:
-		{
-			reg[1] = 0x02 | reg[1];
-		}
+		reg[1] = 0x02 | reg[1];
 		break;
 	case FORCE_OTP_OFF:
-		{
-			reg[1] = reg[1] & 0xfd;
-		}
+		reg[1] = reg[1] & 0xfd;
 		break;
 	case FORCE_TX_PLL:
-		{
-			reg[0] = 0x20 | (reg[0] & 0xcf);
-		}
+		reg[0] = 0x20 | (reg[0] & 0xcf);
 		break;
 	case FORCE_LDE:
-		{
-			reg[0] = 0x01;
-			reg[1] = 0x03;
-		}
+		reg[0] = 0x01;
+		reg[1] = 0x03;
 		break;
 	default:
 		break;
@@ -876,6 +860,8 @@ static int
 _dw1000_read_otp(struct dw1000_local *lp, u16 address, u32 *data)
 {
 	int ret;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// Write the address
 	ret = dw1000_write_16bit_reg(lp, OTP_IF_ID, OTP_ADDR, address);
@@ -909,6 +895,8 @@ static void
 dw1000_read_otp(struct dw1000_local *lp, u32 address, u8 length, u32 *array)
 {
 	int i;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	/* NOTE: Set system clock to XTAL - this is necessary to make sure the values read by _dwt_otpread are reliable */
 	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
@@ -947,6 +935,8 @@ _dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
 	u8 rd_buf[4];
 	u8 wr_buf[4];
 	u32 mra = 0, mrb = 0, mr = 0;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// PROGRAMME MRA
 	// Set MRA, MODE_SEL
@@ -1379,6 +1369,9 @@ dw1000_setup_reg_messages(struct dw1000_local *lp)
 static void
 _dw1000_disable_sequencing(struct dw1000_local *lp)
 {
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	/* Set system clock to XTI */
 	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
 
@@ -1399,7 +1392,11 @@ _dw1000_disable_sequencing(struct dw1000_local *lp)
  * no return value
  */
 void _dw1000_config_lde(struct dw1000_local *lp, int prf_index) {
-	dw1000_write_8bit_reg(lp, LDE_IF_ID, LDE_CFG1_OFFSET, LDE_PARAM1); // 8-bit configuration register
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	/* 8-bit configuration register */
+	dw1000_write_8bit_reg(lp, LDE_IF_ID, LDE_CFG1_OFFSET, LDE_PARAM1);
 
 	if (prf_index) {
 		dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_CFG2_OFFSET, (u16)LDE_PARAM3_64); // 16-bit LDE configuration tuning register
@@ -1421,6 +1418,9 @@ void _dw1000_config_lde(struct dw1000_local *lp, int prf_index) {
  */
 void _dw1000_upload_aon_config(struct dw1000_local *lp)
 {
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, AON_CTRL_UPL_CFG);
 	/* Clear the register */
 	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, 0x00);
@@ -1440,6 +1440,8 @@ void _dw1000_upload_aon_config(struct dw1000_local *lp)
  */
 void _dw1000_upload_aon_array(struct dw1000_local *lp)
 {
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	/* Clear the register */
 	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, 0x00);
 	dw1000_write_8bit_reg(lp, AON_ID, AON_CTRL_OFFSET, AON_CTRL_SAVE);
@@ -1459,6 +1461,9 @@ void _dw1000_upload_aon_array(struct dw1000_local *lp)
 void
 dw1000_soft_reset(struct dw1000_local *lp)
 {
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	_dw1000_disable_sequencing(lp);
 
 	/* Clear any AON auto download bits (as reset will trigger AON download) */
@@ -1498,6 +1503,9 @@ void dw1000_set_xtal_trim(struct dw1000_local *lp, u8 value)
 {
 	// The 3 MSb in this 8-bit register must be kept to 0b011 to avoid any malfunction.
 	u8 reg_val = (3 << 5) | (value & FS_XTALT_MASK);
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_XTALT_OFFSET, reg_val);
 }
 
@@ -1514,17 +1522,19 @@ void dw1000_set_xtal_trim(struct dw1000_local *lp, u8 value)
  */
 void _dw1000_load_ucode_from_rom(struct dw1000_local *lp)
 {
-	// Set up clocks
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	/* Set up clocks */
 	_dw1000_enable_clocks(lp, FORCE_LDE);
 
-	// Kick off the LDE load
-	// Set load LDE kick bit
+	/* Kick off the LDE load */
+	/* Set load LDE kick bit */
 	dw1000_write_16bit_reg(lp, OTP_IF_ID, OTP_CTRL, OTP_CTRL_LDELOAD);
 
-	msleep(1); // Allow time for code to upload (should take up to 120 us)
+	msleep(1); // Allow time for code to upload (should take up to 120 us) */
 
-	// Default clocks (ENABLE_ALL_SEQ)
-	// Enable clocks for sequencing
+	/* Default clocks (ENABLE_ALL_SEQ) */
+	/* Enable clocks for sequencing */
 	_dw1000_enable_clocks(lp, ENABLE_ALL_SEQ);
 }
 
