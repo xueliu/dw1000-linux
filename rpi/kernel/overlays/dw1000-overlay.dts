@@ -19,7 +19,7 @@
 				reg = <0>;
 				interrupt-parent = <&gpio>;
 				interrupts = <17 4>; // IRQF_TRIGGER_HIGH
-				rstn-gpio = <&gpio 27 1>;
+				rstn-gpio = <&gpio 27 0>; // LOW
 				spi-max-frequency = <4000000>;
 			};
 		};
