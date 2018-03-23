@@ -174,14 +174,14 @@
 // Call-back data RX frames flags
 #define DW100_CB_DATA_RX_FLAG_RNG 0x1 // Ranging bit
 
-#define NUM_BR 3
-#define NUM_PRF 2
-#define NUM_PACS 4
-#define NUM_BW 2            //2 bandwidths are supported
-#define NUM_SFD 2           //supported number of SFDs - standard = 0, non-standard = 1
-#define NUM_CH 6            //supported channels are 1, 2, 3, 4, 5, 7
+#define NUM_BR	3
+#define NUM_PRF	2
+#define NUM_PACS	4
+#define NUM_BW	2	// two bandwidths are supported
+#define NUM_SFD	2           //supported number of SFDs - standard = 0, non-standard = 1
+#define NUM_CH	6            //supported channels are 1, 2, 3, 4, 5, 7
 #define NUM_CH_SUPPORTED 8  //supported channels are '0', 1, 2, 3, 4, 5, '6', 7
-#define PCODES 25           //supported preamble codes
+#define PCODES	25           //supported preamble codes
 
 #define PEAK_MULTPLIER  (0x60) //3 -> (0x3 * 32) & 0x00E0
 #define N_STD_FACTOR    (13)
@@ -414,49 +414,84 @@ enum {
 	STATE_SNOOZE	= 0x08,
 };
 
-// static bool
-// dw1000_reg_writeable(struct device *dev, unsigned int reg)
-// {
-// 	switch (reg) {
-// 	case RG_EUI:
-// 		return true;
-// 	default:
-// 		return false;
-// 	}
-// }
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_async_read_reg() / dwt_readfromdevice
+ *
+ * @brief  this function is used to async read from the DW1000 device registers
+ * Notes:
+ *        1. Firstly we create a header (the first byte is a header byte)
+ *        a. check if sub index is used, if subindexing is used - set bit-6 to 1 to signify that the sub-index address follows the register index byte
+ *        b. set bit-7 (or with 0x80) for write operation
+ *        c. if extended sub address index is used (i.e. if index > 127) set bit-7 of the first sub-index byte following the first header byte
+ *
+ *        2. Write the header followed by the data bytes to the DW1000 device
+ *        3. Store the read data in the input buffer
+ *
+ * input parameters:
+ * @param lp		- struct dw1000_local
+ * @param addr		- ID of register file or buffer being accessed
+ * @param index         - byte index into register file or buffer being accessed
+ * @param length        - number of bytes being read
+ * @param data		- pointer to buffer in which to return the read data.
+ *
+ * output parameters
+ *
+ * returns SPI transmission status
+ */
+static int
+dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data, void (*complete)(void *context)) {
+	/* Buffer to compose header in */
+	u8 header[3] = { 0, 0, 0 };
+	/* Counter for length of header */
+	int   cnt = 0;
+//	int i;
+	struct spi_message msg;
+	struct spi_transfer header_xfer = {
+		.tx_buf = header,
+	};
 
-// static bool
-// dw1000_reg_readable(struct device *dev, unsigned int reg)
-// {
-// 	bool rc;
+	struct spi_transfer data_xfer = {
+		.len = length,
+		.rx_buf = data,
+	};
 
-// 	/* all writeable are also readable */
-// 	rc = dw1000_reg_writeable(dev, reg);
-// 	if (rc)
-// 		return rc;
+	/* Write message header selecting READ operation and addresses as appropriate
+	 *(this is one to three bytes long)
+	 */
+	/* For index of 0, no sub-index is required */
+	if (index == 0) {
+		/* Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id */
+		header[cnt++] = (u8)addr;
+	} else {
+		/* Bit-7 zero is READ operation, bit-6 one=sub-address follows, bits 5-0 is reg file id */
+		header[cnt++] = (u8)(SUB_INDEX | addr);
+		/* For non-zero index < 127, just a single sub-index byte is required */
+		if (index <= 127) {
+			/* Bit-7 zero means no extension, bits 6-0 is index */
+			header[cnt++] = (u8)index;
 
-// 	/* readonly regs */
-// 	switch (reg) {
-// 	case RG_DEV_ID:
-// 		return true;
-// 	default:
-// 		return false;
-// 	}
-// }
+		} else {
+			/* Bit-7 one means extended index, bits 6-0 is low seven bits of index */
+			header[cnt++] = ADDR_EXT | (u8)(index);
+			/* 8-bit value = high eight bits of index */
+			header[cnt++] =  (u8)(index >> 7);
+		}
+	}
 
-// static const struct regmap_config dw1000_regmap_spi_config = {
-// 	.reg_bits = 8,
-// 	.val_bits = 8,
-// 	.write_flag_mask = CMD_REG | CMD_WRITE,
-// 	.read_flag_mask = CMD_REG,
-// 	.cache_type = REGCACHE_RBTREE,
-// 	.max_register = AT86RF2XX_NUMREGS,
-// 	.writeable_reg = dw1000_reg_writeable,
-// 	.readable_reg = dw1000_reg_readable,
-// 	.volatile_reg = dw1000_reg_volatile,
-// 	.precious_reg = dw1000_reg_precious,
-// };
+	header_xfer.len = cnt;
 
+//	for (i = 0; i < cnt; i++) {
+//		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
+//	}
+
+	msg.complete = complete;
+
+	spi_message_init(&msg);
+	spi_message_add_tail(&header_xfer, &msg);
+	spi_message_add_tail(&data_xfer, &msg);
+
+	return spi_async(lp->spi, &msg);
+}
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn dw1000_read_reg() / dwt_readfromdevice
@@ -485,9 +520,11 @@ enum {
 static int
 dw1000_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data)
 {
-	u8 header[3] = { 0, 0, 0}; // Buffer to compose header in
-	int   cnt = 0; // Counter for length of header
-	int i;
+	/* Buffer to compose header in */
+	u8 header[3] = { 0, 0, 0};
+	/* Counter for length of header */
+	int   cnt = 0;
+//	int i;
 	struct spi_message msg;
 	struct spi_transfer header_xfer = {
 		.tx_buf = header,
@@ -498,18 +535,24 @@ dw1000_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *
 		.rx_buf = data,
 	};
 
-	// Write message header selecting READ operation and addresses as appropriate (this is one to three bytes long)
-	if (index == 0) { // For index of 0, no sub-index is required
-		header[cnt++] = (u8)addr; // Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
+	/* Write message header selecting READ operation and addresses as appropriate (this is one to three bytes long) */
+	/* For index of 0, no sub-index is required*/
+	if (index == 0) {
+		/* Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id*/
+		header[cnt++] = (u8)addr;
 	} else {
-		// Bit-7 zero is READ operation, bit-6 one=sub-address follows, bits 5-0 is reg file id
-		header[cnt++] = (u8)(0x40 | addr);
+		/* Bit-7 zero is READ operation, bit-6 one=sub-address follows, bits 5-0 is reg file id */
+		header[cnt++] = (u8)(SUB_INDEX | addr); // 0x40
 
-		if (index <= 127) { // For non-zero index < 127, just a single sub-index byte is required
-			header[cnt++] = (u8)index; // Bit-7 zero means no extension, bits 6-0 is index.
+		/* For non-zero index < 127, just a single sub-index byte is required */
+		if (index <= 127) {
+			/* Bit-7 zero means no extension, bits 6-0 is index */
+			header[cnt++] = (u8)index;
 		} else {
-			header[cnt++] = 0x80 | (u8)(index); // Bit-7 one means extended index, bits 6-0 is low seven bits of index.
-			header[cnt++] =  (u8)(index >> 7); // 8-bit value = high eight bits of index.
+			/* Bit-7 one means extended index, bits 6-0 is low seven bits of index */
+			header[cnt++] = ADDR_EXT | (u8)(index);
+			/* 8-bit value = high eight bits of index */
+			header[cnt++] =  (u8)(index >> 7);
 		}
 	}
 
@@ -611,7 +654,7 @@ dw1000_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data) {
  * input parameters:
  * @param lp		- struct dw1000_local
  * @param addr		- ID of register file or buffer being accessed
- * @param index         - byte index into register file or buffer being accessed
+ * @param index		- byte index into register file or buffer being accessed
  * @param length        - number of bytes being written
  * @param data		- pointer to buffer containing the 'length' bytes to be written
  *
@@ -622,8 +665,10 @@ dw1000_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data) {
 static int
 dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const void *data)
 {
-	u8 header[3] = { 0, 0, 0 }; // Buffer to compose header in
-	int   cnt = 0; // Counter for length of header
+	// Buffer to compose header in
+	u8 header[3] = { 0, 0, 0 };
+	// Counter for length of header
+	int   cnt = 0;
 //	int i;
 	struct spi_message msg;
 	struct spi_transfer header_xfer = {
@@ -636,18 +681,23 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 	};
 
 	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
-	if (index == 0) { // For index of 0, no sub-index is required
-		// Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
+	// For index of 0, no sub-index is required
+	if (index == 0) {
+		// Bit-7 zero is WRITE operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
 		header[cnt++] = REG_WRITE | (u8)addr;
 	} else {
 		// Bit-7 is WRITE operation, bit-6 one=sub-address follows, bits 5-0 is reg file id
 		header[cnt++] = (u8)(REG_WRITE | SUB_INDEX | addr);
 
-		if (index <= 127) { // For non-zero index < 127, just a single sub-index byte is required
-			header[cnt++] = (u8)index; // Bit-7 zero means no extension, bits 6-0 is index.
+		// For non-zero index < 127, just a single sub-index byte is required
+		if (index <= 127) {
+			// Bit-7 zero means no extension, bits 6-0 is index.
+			header[cnt++] = (u8)index;
 		} else {
-			header[cnt++] = REG_WRITE | (u8)(index); // Bit-7 one means extended index, bits 6-0 is low seven bits of index.
-			header[cnt++] =  (u8)(index >> 7); // 8-bit value = high eight bits of index.
+			// Bit-7 one means extended index, bits 6-0 is low seven bits of index.
+			header[cnt++] = REG_WRITE | (u8)(index);
+			// 8-bit value = high eight bits of index.
+			header[cnt++] =  (u8)(index >> 7);
 		}
 	}
 
@@ -664,12 +714,43 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 	return spi_sync(lp->spi, &msg);
 }
 
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_write_8bit_reg / dwt_write8bitoffsetreg()
+ *
+ * @brief  this function is used to write an 8-bit value to the DW1000 device registers
+ *
+ * input parameters:
+ * @param lp	- struct dw1000_local
+ * @param addr	- ID of register file or buffer being accessed
+ * @param index	- the index into register file or buffer being accessed
+ * @param data	- the value to write
+ *
+ * output parameters
+ *
+ * no return value
+ */
 static int
 dw1000_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 data)
 {
 	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
 }
 
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_write_16bit_reg / dwt_write16bitoffsetreg()
+ *
+ * @brief  this function is used to write 16-bit value to the DW1000 device registers
+ *
+ * input parameters:
+ * @param lp
+ * @param addr	- ID of register file or buffer being accessed
+ * @param index	- the index into register file or buffer being accessed
+ * @param data	- the value to write
+ *
+ * output parameters
+ *
+ * no return value
+ */
 static int
 dw1000_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 data)
 {
@@ -677,7 +758,21 @@ dw1000_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 data)
 	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
 }
 
-
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_write_32bit_reg / dwt_write32bitoffsetreg()
+ *
+ * @brief  this function is used to write 32-bit value to the DW1000 device registers
+ *
+ * input parameters:
+ * @param lp	- struct dw1000_local
+ * @param addr	- ID of register file or buffer being accessed
+ * @param index	- the index into register file or buffer being accessed
+ * @param data	- the value to write
+ *
+ * output parameters
+ *
+ * no return value
+ */
 static int
 dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data)
 {
@@ -998,6 +1093,34 @@ _dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
 	return DW1000_SUCCESS;
 }
 
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_sync_rx_buf_ptrs / dwt_syncrxbufptrs()
+ *
+ * @brief this function synchronizes rx buffer pointers
+ * need to make sure that the host/IC buffer pointers are aligned before starting RX
+ *
+ * input parameters:
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void dw1000_sync_rx_buf_ptrs(struct dw1000_local *lp) {
+	u8  buff;
+	int ret;
+	/* Need to make sure that the host/IC buffer pointers are aligned before starting RX */
+	/* Read 1 byte at offset 3 to get the 4th byte out of 5 */
+	ret = dw1000_read_8bit_reg(lp, SYS_STATUS_ID, 3, &buff);
+
+	/* IC side Receive Buffer Pointer */
+	if ((buff & (SYS_STATUS_ICRBP >> 24)) !=
+	    /* Host Side Receive Buffer Pointer */
+		((buff & (SYS_STATUS_HSRBP >> 24)) << 1)) {
+		/* We need to swap RX buffer status reg (write one to toggle internally) */
+		dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_HRBT_OFFSET, 0x01);
+	}
+}
+
 static inline void
 dw1000_sleep(struct dw1000_local *lp)
 {
@@ -1033,16 +1156,84 @@ dw1000_start(struct ieee802154_hw *hw)
 	return 0;
 }
 
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_stop / dwt_forcetrxoff()
+ *
+ * @brief This is used to turn off the transceiver
+ *
+ * input parameters
+ *
+ * output parameters
+ *
+ * no return value
+ */
 static void
 dw1000_stop(struct ieee802154_hw *hw)
-{}
+{
+//	decaIrqStatus_t stat;
+	u32 mask;
+
+	struct dw1000_local *lp = hw->priv;
+
+	/* Read set interrupt mask */
+	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
+
+	// Need to beware of interrupts occurring in the middle of following read modify write cycle
+	// We can disable the radio, but before the status is cleared an interrupt can be set (e.g. the
+	// event has just happened before the radio was disabled)
+	// thus we need to disable interrupt during this
+
+	disable_irq(lp->spi->irq);
+
+//	stat = decamutexon();
+
+	/* Clear interrupt mask - so we don't get any unwanted events */
+	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, 0);
+
+	/* Disable the radio */
+	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8)SYS_CTRL_TRXOFF);
+
+	/* Forcing Transceiver off - so we do not want to see any new events that may have happened */
+	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, (SYS_STATUS_ALL_TX | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_GOOD));
+
+	dw1000_sync_rx_buf_ptrs(lp);
+
+	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, mask); // Set interrupt mask to what it was */
+
+	// Enable/restore interrupts again... */
+//	decamutexoff(stat);
+//	enable_irq(lp->spi->irq);
+
+	lp->pdata.wait4resp = 0;
+}
 
 static int
 dw1000_set_channel(struct ieee802154_hw *hw, u8 page, u8 channel)
 {
 	struct dw1000_local *lp = hw->priv;
 
-	dev_dbg(printdev(lp), "%s\n", __func__);
+	/* Select wide or narrow band */
+	u8 bandwidth = ((channel == 4) || (channel == 7)) ? 1 : 0;
+
+	BUG_ON(page != 4);
+
+	dev_dbg(printdev(lp), "%s(%d)\n", __func__, channel);
+
+//	dev_dbg(printdev(lp), "channel: %d\n", channel);
+//	dev_dbg(printdev(lp), "channel index: %d\n", chan_idx[channel]);
+
+	// Configure PLL2/RF PLL block CFG/TUNE (for a given channel)
+	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, fs_pll_cfg[chan_idx[channel]]);
+	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, fs_pll_tune[chan_idx[channel]]);
+
+	// Configure RF RX blocks (for specified channel/bandwidth)
+	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, rx_config[bandwidth]);
+
+	// Configure RF TX blocks (for specified channel and PRF)
+	// Configure RF TX control
+	dw1000_write_32bit_reg(lp, RF_CONF_ID, RF_TXCTRL_OFFSET, tx_config[chan_idx[channel]]);
+
 	return 0;
 }
 
@@ -1061,9 +1252,44 @@ dw1000_update_cca_ed_level(struct dw1000_local *lp, int rssi_base_val)
 
 static int
 dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
-			   struct ieee802154_hw_addr_filt *filt,
-			   unsigned long changed)
+			struct ieee802154_hw_addr_filt *filt,
+			unsigned long changed)
 {
+	struct dw1000_local *lp = hw->priv;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	if (changed & IEEE802154_AFILT_SADDR_CHANGED) {
+		u16 addr = le16_to_cpu(filt->short_addr);
+		/* Short address into low 16 bits */
+		dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_SHORT_ADDR_OFFSET, addr);
+	}
+
+	if (changed & IEEE802154_AFILT_PANID_CHANGED) {
+		u16 pan = le16_to_cpu(filt->pan_id);
+
+		/* PAN ID is high 16 bits of register */
+		dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_PAN_ID_OFFSET, pan);
+	}
+
+	if (changed & IEEE802154_AFILT_IEEEADDR_CHANGED) {
+		u8 addr[EUI_64_LEN];
+
+		memcpy(addr, &filt->ieee_addr, EUI_64_LEN);
+
+		dw1000_write_reg(lp, EUI_64_ID, EUI_64_OFFSET, EUI_64_LEN, addr);
+	}
+
+//	if (changed & IEEE802154_AFILT_PANC_CHANGED) {
+//		if (filt->pan_coord) {
+//			regmap_update_bits(lp->regmap_dar, DAR_PHY_CTRL4,
+//					   DAR_PHY_CTRL4_PANCORDNTR0, 0x10);
+//		} else {
+//			regmap_update_bits(lp->regmap_dar, DAR_PHY_CTRL4,
+//					   DAR_PHY_CTRL4_PANCORDNTR0, 0x00);
+//		}
+//	}
+
 	return 0;
 }
 
@@ -1100,18 +1326,6 @@ dw1000_set_cca_ed_level(struct ieee802154_hw *hw, s32 mbm)
 {
 	return 0;
 }
-static int
-dw1000_set_csma_params(struct ieee802154_hw *hw, u8 min_be, u8 max_be,
-			  u8 retries)
-{
-	return 0;
-}
-
-static int
-dw1000_set_frame_retries(struct ieee802154_hw *hw, s8 retries)
-{
-	return 0;
-}
 
 static int
 dw1000_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
@@ -1131,8 +1345,6 @@ static const struct ieee802154_ops dw1000_ops = {
 	.set_lbt = dw1000_set_lbt,
 	.set_cca_mode = dw1000_set_cca_mode,
 	.set_cca_ed_level = dw1000_set_cca_ed_level,
-	.set_csma_params = dw1000_set_csma_params,
-	.set_frame_retries = dw1000_set_frame_retries,
 	.set_promiscuous_mode = dw1000_set_promiscuous_mode,
 };
 
@@ -1541,7 +1753,49 @@ void dw1000_configure(struct dw1000_local *lp) {
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
- * @fn dw1000_hw_init()
+ * @fn _dw1000_set_spi_low / spi_set_rate_low()
+ *
+ * @brief Set SPI rate to less than 3 MHz to properly perform DW1000 initialisation.
+ *
+ * @param none
+ *
+ * @return none
+ */
+static void
+_dw1000_set_spi_low(struct spi_device *spi)
+{
+	dev_dbg(&spi->dev, "%s\n", __func__);
+
+	dev_dbg(&spi->dev, "current max_speed is %d MHz\n", spi->max_speed_hz);
+
+	spi->max_speed_hz = 3000000;
+
+	dev_dbg(&spi->dev, "low max_speed is %d MHz\n", spi->max_speed_hz);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn _dw1000_set_spi_high / spi_set_rate_high()
+ *
+ * @brief Set SPI rate as close to 20 MHz as possible for optimum performances.
+ *
+ * @param none
+ *
+ * @return none
+ */
+
+static void
+_dw1000_set_spi_high(struct spi_device *spi) {
+	dev_dbg(&spi->dev, "%s\n", __func__);
+
+	dev_dbg(&spi->dev, "current max_speed is %d MHz\n", spi->max_speed_hz);
+
+	spi->max_speed_hz = 20000000;
+
+	dev_dbg(&spi->dev, "high max_speed is %d MHz\n", spi->max_speed_hz);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_hw_init() / dwt_initialise
  *
  * @brief This function initiates communications with the DW1000 transceiver
  * and reads its DEV_ID register (address 0x00) to verify the IC is one supported
@@ -1568,7 +1822,7 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	u16 otp_addr = 0;
 	u32 ldo_tune = 0;
 
-	dev_info(printdev(lp), "%s\n", __func__);
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	lp->pdata.dblbuffon = 0; /* Double buffer mode off by default */
 	lp->pdata.wait4resp = 0;
@@ -1668,6 +1922,8 @@ dw1000_detect_device(struct dw1000_local *lp)
 	int ret = 0;
 	u32 dev_id = 0;
 
+	struct wpan_phy *phy = lp->hw->phy;
+
 	dev_info(printdev(lp), "%s\n", __func__);
 
 	dw1000_read_32bit_reg(lp, RG_DEV_ID, 0, &dev_id);
@@ -1682,30 +1938,30 @@ dw1000_detect_device(struct dw1000_local *lp)
 			IEEE802154_HW_FRAME_RETRIES | IEEE802154_HW_AFILT |
 			IEEE802154_HW_PROMISCUOUS;
 
-	lp->hw->phy->flags = WPAN_PHY_FLAG_TXPOWER |
+	phy->flags = WPAN_PHY_FLAG_TXPOWER |
 			     WPAN_PHY_FLAG_CCA_ED_LEVEL |
 			     WPAN_PHY_FLAG_CCA_MODE;
 
-	lp->hw->phy->supported.cca_modes = BIT(NL802154_CCA_ENERGY) |
+	phy->supported.cca_modes = BIT(NL802154_CCA_ENERGY) |
 		BIT(NL802154_CCA_CARRIER) | BIT(NL802154_CCA_ENERGY_CARRIER);
-	lp->hw->phy->supported.cca_opts = BIT(NL802154_CCA_OPT_ENERGY_CARRIER_AND) |
+	phy->supported.cca_opts = BIT(NL802154_CCA_OPT_ENERGY_CARRIER_AND) |
 		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
 
-	lp->hw->phy->cca.mode = NL802154_CCA_ENERGY;
+	phy->cca.mode = NL802154_CCA_ENERGY;
 	chip = "dw1000";
 	lp->hw->flags |= IEEE802154_HW_LBT;
-	lp->hw->phy->supported.channels[4] = 0x1e;
-	lp->hw->phy->current_channel = 1;
-	lp->hw->phy->current_page = 4;
-	lp->hw->phy->symbol_duration = 25;
-	lp->hw->phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
-	lp->hw->phy->supported.tx_powers = dw1000_powers;
-	lp->hw->phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
-	lp->hw->phy->supported.cca_ed_levels = dw1000_ed_levels;
-	lp->hw->phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
+	phy->supported.channels[4] = 0xbe;
+	phy->current_channel = 1;
+	phy->current_page = 4;
+	phy->symbol_duration = 25;
+	phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
+	phy->supported.tx_powers = dw1000_powers;
+	phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
+	phy->supported.cca_ed_levels = dw1000_ed_levels;
+	phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
 
-	lp->hw->phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
-	lp->hw->phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
+	phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
+	phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
 
 not_supp:
 	dev_info(&lp->spi->dev, "Detected %s chip id 0x%x\n", chip, dev_id);
@@ -1775,13 +2031,15 @@ static int dw1000_probe(struct spi_device *spi)
 	if (rc < 0)
 		goto free_dev;
 
-//	init_completion(&lp->state_complete);
-
 	spi_set_drvdata(spi, lp);
+
+	_dw1000_set_spi_low(spi);
 
 	rc = dw1000_hw_init(lp, DW1000_LOADUCODE);
 	if (rc)
 		goto free_dev;
+
+	_dw1000_set_spi_high(spi);
 
 	/* Read irq status register to reset irq line */
 //	rc = dw1000_read_subreg(lp, RG_IRQ_STATUS, 0xff, 0, &status);
@@ -1859,4 +2117,5 @@ static struct spi_driver dw1000_driver = {
 module_spi_driver(dw1000_driver);
 
 MODULE_DESCRIPTION("DW1000 IEEE 802.15.4 UWB Transceiver Driver");
+MODULE_AUTHOR("Xue Liu");
 MODULE_LICENSE("GPL v2");
