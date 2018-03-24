@@ -1140,10 +1140,118 @@ dw1000_ed(struct ieee802154_hw *hw, u8 *level)
 	return 0;
 }
 
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dwt_forcetrxoff()
+ *
+ * @brief This is used to turn off the transceiver
+ *
+ * input parameters
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static void
+dw1000_force_trx_off(struct dw1000_local *lp)
+{
+//	decaIrqStatus_t stat;
+	u32 mask;
+
+	/* Read set interrupt mask */
+	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
+
+	// Need to beware of interrupts occurring in the middle of following read modify write cycle
+	// We can disable the radio, but before the status is cleared an interrupt can be set (e.g. the
+	// event has just happened before the radio was disabled)
+	// thus we need to disable interrupt during this
+
+	disable_irq(lp->spi->irq);
+
+//	stat = decamutexon();
+
+	/* Clear interrupt mask - so we don't get any unwanted events */
+	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, 0);
+
+	/* Disable the radio */
+	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8)SYS_CTRL_TRXOFF);
+
+	/* Forcing Transceiver off - so we do not want to see any new events that may have happened */
+	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, (SYS_STATUS_ALL_TX | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_GOOD));
+
+	dw1000_sync_rx_buf_ptrs(lp);
+
+	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, mask); // Set interrupt mask to what it was */
+
+	// Enable/restore interrupts again... */
+//	decamutexoff(stat);
+	enable_irq(lp->spi->irq);
+
+	lp->pdata.wait4resp = 0;
+
+} // end deviceforcetrxoff()
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_start / dwt_rxenable()
+ *
+ * @brief This call turns on the receiver, can be immediate or delayed (depending on the mode parameter). In the case of a
+ * "late" error the receiver will only be turned on if the DWT_IDLE_ON_DLY_ERR is not set.
+ * The receiver will stay turned on, listening to any messages until
+ * it either receives a good frame, an error (CRC, PHY header, Reed Solomon) or  it times out (SFD, Preamble or Frame).
+ *
+ * input parameters
+ * @param mode - this can be one of the following allowed values:
+ *
+ * DWT_START_RX_IMMEDIATE      0 used to enbale receiver immediately
+ * DWT_START_RX_DELAYED        1 used to set up delayed RX, if "late" error triggers, then the RX will be enabled immediately
+ * (DWT_START_RX_DELAYED | DWT_IDLE_ON_DLY_ERR) 3 used to disable re-enabling of receiver if delayed RX failed due to "late" error
+ * (DWT_START_RX_IMMEDIATE | DWT_NO_SYNC_PTRS) 4 used to re-enable RX without trying to sync IC and host side buffer pointers, typically when
+ *                                               performing manual RX re-enabling in double buffering mode
+ *
+ * returns DWT_SUCCESS for success, or DWT_ERROR for error (e.g. a delayed receive enable will be too far in the future if delayed time has passed)
+ */
 static int
 dw1000_start(struct ieee802154_hw *hw)
 {
-	return 0;
+	u16 temp;
+	u8 temp1;
+	int mode = DW1000_START_RX_IMMEDIATE;
+
+	struct dw1000_local *lp = hw->priv;
+
+	if ((mode & DW1000_NO_SYNC_PTRS) == 0) {
+//		dwt_syncrxbufptrs();
+		dw1000_sync_rx_buf_ptrs(lp);
+	}
+
+	temp = (u16)SYS_CTRL_RXENAB;
+
+	if (mode & DW1000_START_RX_DELAYED) {
+		temp |= (u16)SYS_CTRL_RXDLYE;
+	}
+
+	dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
+
+	/* check for errors */
+	if (mode & DW1000_START_RX_DELAYED) {
+		/* Read 1 byte at offset 3 to get the 4th byte out of 5 */
+		dw1000_read_8bit_reg(lp, SYS_STATUS_ID, 3, &temp1);
+		/* if delay has passed do immediate RX on unless DWT_IDLE_ON_DLY_ERR is true */
+		if ((temp1 & (SYS_STATUS_HPDWARN >> 24)) != 0) {
+
+			/* turn the delayed receive off */
+			//dwt_forcetrxoff();
+			dw1000_force_trx_off(lp);
+			/* if DWT_IDLE_ON_DLY_ERR not set then re-enable receiver */
+			if ((mode & DW1000_IDLE_ON_DLY_ERR) == 0) {
+				dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
+			}
+			return DW1000_ERROR; // return warning indication
+		}
+	}
+
+	return DW1000_SUCCESS;
+//	return 0;
 }
 
 
