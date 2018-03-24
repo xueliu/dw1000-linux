@@ -1158,6 +1158,8 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 //	decaIrqStatus_t stat;
 	u32 mask;
 
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	/* Read set interrupt mask */
 	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
 
@@ -1219,6 +1221,8 @@ dw1000_start(struct ieee802154_hw *hw)
 
 	struct dw1000_local *lp = hw->priv;
 
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	if ((mode & DW1000_NO_SYNC_PTRS) == 0) {
 //		dwt_syncrxbufptrs();
 		dw1000_sync_rx_buf_ptrs(lp);
@@ -1273,6 +1277,8 @@ dw1000_stop(struct ieee802154_hw *hw)
 	u32 mask;
 
 	struct dw1000_local *lp = hw->priv;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	/* Read set interrupt mask */
 	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
