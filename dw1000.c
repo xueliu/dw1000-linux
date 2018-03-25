@@ -404,14 +404,22 @@ struct dw1000_local {
 //	u8 tx_retry;
 	struct sk_buff *tx_skb;
 
-	u32 *irq_status;
+//	u32 irq_status;
 
 	/* SPI transaction with 3-octet header */
 	struct spi_message reg_msg;
 	u8 reg_addr[3];
 	struct spi_transfer reg_addr_xfer;
-	u8 reg_val[16];
+//	u8 reg_val[16];
 	struct spi_transfer reg_val_xfer;
+
+	/* async spi read */
+	struct spi_message async_read_msg;
+	u8 async_read_header[3];
+	struct spi_transfer async_read_header_xfer;
+//	u8 async_read_data[16];
+	struct spi_transfer async_read_data_xfer;
+
 };
 
 /* DW1000 operational states */
@@ -454,19 +462,22 @@ enum {
 static int
 dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data, void (*complete)(void *context)) {
 	/* Buffer to compose header in */
-	u8 header[3] = { 0, 0, 0 };
+//	u8 header[3] = { 0, 0, 0 };
 	/* Counter for length of header */
 	int   cnt = 0;
 //	int i;
-	struct spi_message msg;
-	struct spi_transfer header_xfer = {
-		.tx_buf = header,
-	};
+//	struct spi_message msg;
+//	struct spi_transfer header_xfer = {
+//		.tx_buf = header,
+//	};
 
-	struct spi_transfer data_xfer = {
-		.len = length,
-		.rx_buf = data,
-	};
+//	struct spi_transfer data_xfer = {
+//		.len = length,
+//		.rx_buf = data,
+//	};
+
+	lp->async_read_data_xfer.rx_buf = data;
+	lp->async_read_data_xfer.len = length;
 
 	/* Write message header selecting READ operation and addresses as appropriate
 	 *(this is one to three bytes long)
@@ -474,36 +485,36 @@ dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, 
 	/* For index of 0, no sub-index is required */
 	if (index == 0) {
 		/* Bit-7 zero is READ operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id */
-		header[cnt++] = (u8)addr;
+		lp->async_read_header[cnt++] = (u8)addr;
 	} else {
 		/* Bit-7 zero is READ operation, bit-6 one=sub-address follows, bits 5-0 is reg file id */
-		header[cnt++] = (u8)(SUB_INDEX | addr);
+		lp->async_read_header[cnt++] = (u8)(SUB_INDEX | addr);
 		/* For non-zero index < 127, just a single sub-index byte is required */
 		if (index <= 127) {
 			/* Bit-7 zero means no extension, bits 6-0 is index */
-			header[cnt++] = (u8)index;
+			lp->async_read_header[cnt++] = (u8)index;
 
 		} else {
 			/* Bit-7 one means extended index, bits 6-0 is low seven bits of index */
-			header[cnt++] = ADDR_EXT | (u8)(index);
+			lp->async_read_header[cnt++] = ADDR_EXT | (u8)(index);
 			/* 8-bit value = high eight bits of index */
-			header[cnt++] =  (u8)(index >> 7);
+			lp->async_read_header[cnt++] =  (u8)(index >> 7);
 		}
 	}
 
-	header_xfer.len = cnt;
+	lp->async_read_header_xfer.len = cnt;
 
 //	for (i = 0; i < cnt; i++) {
 //		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
 //	}
 
-	msg.complete = complete;
+	lp->async_read_msg.complete = complete;
 
-	spi_message_init(&msg);
-	spi_message_add_tail(&header_xfer, &msg);
-	spi_message_add_tail(&data_xfer, &msg);
+//	spi_message_init(&msg);
+//	spi_message_add_tail(&header_xfer, &msg);
+//	spi_message_add_tail(&data_xfer, &msg);
 
-	return spi_async(lp->spi, &msg);
+	return spi_async(lp->spi, &lp->async_read_msg);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -525,7 +536,7 @@ dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, 
 static int
 dw1000_async_read_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data, void (*complete)(void *context)) {
 	// Read 1 bytes (8-bits) register into buffer
-	return dw1000_async_read_reg(lp, addr, index, sizeof(data), data, complete);
+	return dw1000_async_read_reg(lp, addr, index, 1, data, complete);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -548,13 +559,13 @@ dw1000_async_read_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 *d
 	int ret;
 
 	// Read 2 bytes (16-bits) register into buffer
-	ret = dw1000_async_read_reg(lp, addr, index, sizeof(data), data, complete);
+	ret = dw1000_async_read_reg(lp, addr, index, 2, data, complete);
 
 	if (ret) {
 		return ret;
 	}
 
-	le16_to_cpus(data);
+//	le16_to_cpus(data);
 
 	return ret;
 }
@@ -563,14 +574,16 @@ static int
 dw1000_async_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data, void (*complete)(void *context)) {
 	int ret;
 
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	// Read 4 bytes (32-bits) register into buffer
-	ret = dw1000_async_read_reg(lp, addr, index, sizeof(data), data, complete);
+	ret = dw1000_async_read_reg(lp, addr, index, 4, data, complete);
 
 	if (ret) {
 		return ret;
 	}
 
-	le32_to_cpus(data);
+//	le32_to_cpus(data);
 
 	return ret;
 }
@@ -670,7 +683,7 @@ static int
 dw1000_read_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data) {
 
 	// Read 1 bytes (8-bits) register into buffer
-	return dw1000_read_reg(lp, addr, index, sizeof(data), data);
+	return dw1000_read_reg(lp, addr, index, 1, data);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -693,7 +706,7 @@ dw1000_read_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 *data) {
 	int ret;
 
 	// Read 2 bytes (16-bits) register into buffer
-	ret = dw1000_read_reg(lp, addr, index, sizeof(data), data);
+	ret = dw1000_read_reg(lp, addr, index, 2, data);
 
 	if (ret) {
 		return ret;
@@ -709,7 +722,7 @@ dw1000_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data) {
 	int ret;
 
 	// Read 4 bytes (32-bits) register into buffer
-	ret = dw1000_read_reg(lp, addr, index, sizeof(data), data);
+	ret = dw1000_read_reg(lp, addr, index, 4, data);
 
 	if (ret) {
 		return ret;
@@ -747,55 +760,62 @@ dw1000_read_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data) {
  */
 static int
 dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const void *data, void (*complete)(void *context)) {
-	// Buffer to compose header in
-	u8 header[3] = { 0, 0, 0 };
+
 	// Counter for length of header
 	int   cnt = 0;
-//	int i;
-	struct spi_message msg;
-	struct spi_transfer header_xfer = {
-		.tx_buf = header,
-	};
 
-	struct spi_transfer data_xfer = {
-		.len = length,
-		.tx_buf = data,
-	};
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+//	int i;
+	// Buffer to compose header in
+//	u8 header[3] = { 0, 0, 0 };
+//	lp->reg_addr;
+//	struct spi_message *msg = lp->reg_msg;
+//	struct spi_transfer header_xfer = {
+//		.tx_buf = header,
+//	};
+
+	lp->reg_val_xfer.len = length;
+	lp->reg_val_xfer.tx_buf = data;
+//	struct spi_transfer data_xfer = {
+//		.len = length,
+//		.tx_buf = data,
+//	};
 
 	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
 	// For index of 0, no sub-index is required
 	if (index == 0) {
 		// Bit-7 zero is WRITE operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
-		header[cnt++] = REG_WRITE | (u8)addr;
+		lp->reg_addr[cnt++] = REG_WRITE | (u8)addr;
 	} else {
 		// Bit-7 is WRITE operation, bit-6 one=sub-address follows, bits 5-0 is reg file id
-		header[cnt++] = (u8)(REG_WRITE | SUB_INDEX | addr);
+		lp->reg_addr[cnt++] = (u8)(REG_WRITE | SUB_INDEX | addr);
 
 		// For non-zero index < 127, just a single sub-index byte is required
 		if (index <= 127) {
 			// Bit-7 zero means no extension, bits 6-0 is index.
-			header[cnt++] = (u8)index;
+			lp->reg_addr[cnt++] = (u8)index;
 		} else {
 			// Bit-7 one means extended index, bits 6-0 is low seven bits of index.
-			header[cnt++] = REG_WRITE | (u8)(index);
+			lp->reg_addr[cnt++] = REG_WRITE | (u8)(index);
 			// 8-bit value = high eight bits of index.
-			header[cnt++] =  (u8)(index >> 7);
+			lp->reg_addr[cnt++] =  (u8)(index >> 7);
 		}
 	}
 
-	header_xfer.len = cnt;
+	lp->reg_addr_xfer.len = cnt;
 
 //	for (i = 0; i < cnt; i++) {
 //		dev_dbg(printdev(lp), "write addr[%d]:0x%x\n", i, header[i]);
 //	}
 
-	msg.complete = complete;
+	lp->reg_msg.complete = complete;
 
-	spi_message_init(&msg);
-	spi_message_add_tail(&header_xfer, &msg);
-	spi_message_add_tail(&data_xfer, &msg);
+//	spi_message_init(&msg);
+//	spi_message_add_tail(&header_xfer, &msg);
+//	spi_message_add_tail(&data_xfer, &msg);
 
-	return spi_async(lp->spi, &msg);
+	return spi_async(lp->spi, &lp->reg_msg);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -816,7 +836,7 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
  */
 static int
 dw1000_async_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 data, void (*complete)(void *context)) {
-	return dw1000_write_reg(lp, addr, index, sizeof(data), &data, complete);
+	return dw1000_async_write_reg(lp, addr, index, 1, &data, complete);
 }
 
 
@@ -838,7 +858,7 @@ dw1000_async_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 dat
 static int
 dw1000_async_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 data, void (*complete)(void *context)) {
 	cpu_to_le16s(&data);
-	return dw1000_write_reg(lp, addr, index, sizeof(data), &data, complete);
+	return dw1000_async_write_reg(lp, addr, index, 2, &data, complete);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -859,7 +879,7 @@ dw1000_async_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 d
 static int
 dw1000_async_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data, void (*complete)(void *context)) {
 	cpu_to_le32s(&data);
-	return dw1000_write_reg(lp, addr, index, sizeof(data), &data, complete);
+	return dw1000_async_write_reg(lp, addr, index, 4, &data, complete);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -895,6 +915,7 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 	int   cnt = 0;
 //	int i;
 	struct spi_message msg;
+
 	struct spi_transfer header_xfer = {
 		.tx_buf = header,
 	};
@@ -903,6 +924,8 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 		.len = length,
 		.tx_buf = data,
 	};
+
+//	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
 	// For index of 0, no sub-index is required
@@ -956,7 +979,7 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 static int
 dw1000_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 data)
 {
-	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
+	return dw1000_write_reg(lp, addr, index, 1, &data);
 }
 
 
@@ -979,7 +1002,7 @@ static int
 dw1000_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 data)
 {
 	cpu_to_le16s(&data);
-	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
+	return dw1000_write_reg(lp, addr, index, 2, &data);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1001,7 +1024,7 @@ static int
 dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data)
 {
 	cpu_to_le32s(&data);
-	return dw1000_write_reg(lp, addr, index, sizeof(data), &data);
+	return dw1000_write_reg(lp, addr, index, 4, &data);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1322,6 +1345,9 @@ _dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
 void dw1000_sync_rx_buf_ptrs(struct dw1000_local *lp) {
 	u8  buff;
 	int ret;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
 	/* Need to make sure that the host/IC buffer pointers are aligned before starting RX */
 	/* Read 1 byte at offset 3 to get the 4th byte out of 5 */
 	ret = dw1000_read_8bit_reg(lp, SYS_STATUS_ID, 3, &buff);
@@ -1350,7 +1376,8 @@ dw1000_awake(struct dw1000_local *lp)
 static void
 dw1000_irq_read_rx_buf_complete(void *context)
 {
-	int ret;
+//	int ret;
+	struct sk_buff *skb;
 	struct dw1000_local *lp = context;
 
 	u16 len = lp->pdata.cbData.datalength;
@@ -1360,7 +1387,7 @@ dw1000_irq_read_rx_buf_complete(void *context)
 
 	// Report frame control - First bytes of the received frame.
 //	dwt_readfromdevice(RX_BUFFER_ID, 0, FCTRL_LEN_MAX, pdw1000local->cbData.fctrl);
-	lp->pdata.cbData.fctrl = lp->rx_buf[0];
+	memcpy(lp->pdata.cbData.fctrl, lp->rx_buf, FCTRL_LEN_MAX);
 
 #ifdef DEBUG
 	print_hex_dump(KERN_INFO, "dw1000 rx: ", DUMP_PREFIX_OFFSET, 16, 1,
@@ -1389,7 +1416,7 @@ dw1000_irq_read_rx_buf_complete(void *context)
 	if ((status & SYS_STATUS_AAT) && ((lp->pdata.cbData.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
 		/* Clear AAT status bit in register */
 //		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_AAT);
-		dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_AAT);
+		dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_AAT, NULL);
 		/* Clear AAT status bit in callback data register copy */
 		lp->pdata.cbData.status &= ~SYS_STATUS_AAT;
 		lp->pdata.wait4resp = 0;
@@ -1404,7 +1431,7 @@ dw1000_irq_read_rx_buf_complete(void *context)
 }
 
 static void
-dw1000_irq_read_rx_fifo_info_complete(void *context)
+dw1000_read_rx_fifo_info_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
@@ -1423,7 +1450,7 @@ dw1000_irq_read_rx_fifo_info_complete(void *context)
 
 	// Report ranging bit
 	if (*len & RX_FINFO_RNG) {
-		lp->pdata.cbData.rx_flags |= DWT_CB_DATA_RX_FLAG_RNG;
+		lp->pdata.cbData.rx_flags |= DW1000_CB_DATA_RX_FLAG_RNG;
 	}
 
 	ret = dw1000_async_read_reg(lp, RX_BUFFER_ID, 0, *len, &lp->rx_buf, dw1000_irq_read_rx_buf_complete);
@@ -1432,7 +1459,7 @@ dw1000_irq_read_rx_fifo_info_complete(void *context)
 }
 
 static void
-dw1000_irq_clear_rx_status_complete(void *context)
+dw1000_clear_rx_status_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
@@ -1441,29 +1468,46 @@ dw1000_irq_clear_rx_status_complete(void *context)
 
 	lp->pdata.cbData.rx_flags = 0;
 
-	// Read frame info - Only the first two bytes of the register are used here.
+	/* Read frame info - Only the first two bytes of the register are used here */
 //	finfo16 = dwt_read16bitoffsetreg(RX_FINFO_ID, RX_FINFO_OFFSET);
-	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cbData.datalength, dw1000_irq_read_rx_fifo_info_complete);
+	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cbData.datalength, dw1000_read_rx_fifo_info_complete);
 
 	if (ret)
 		dev_err(printdev(lp), "failed to read rx fifo info\n");
 }
 
 static void
-dw1000_irq_clear_tx_status_complete(void *context)
+dw1000_clear_rx_reset_complete(void *context)
+{
+//	int ret;
+	struct dw1000_local *lp = context;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	ieee802154_xmit_complete(lp->hw, lp->tx_skb, false);
+}
+
+static void
+dw1000_set_rx_reset_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
+	/* Clear RX reset */
+	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_CLEAR, dw1000_clear_rx_reset_complete);
+	if (ret)
+		dev_err(printdev(lp), "failed to clear rx reset\n");
 
 }
 
 static void
-dw1000_irq_set_rx_reset_complete(void *context) {
+dw1000_clear_tx_status_complete(void *context)
+{
 	int ret;
 	struct dw1000_local *lp = context;
+	u32 status = lp->pdata.cbData.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -1472,155 +1516,106 @@ dw1000_irq_set_rx_reset_complete(void *context) {
 	// we need to handle the IC issue which turns on the RX again in this situation (i.e. because it is wrongly applying the wait4resp after the
 	// ACK TX).
 	// See section "Transmit and automatically wait for response" in DW1000 User Manual
-	if ((lp->irq_status & SYS_STATUS_AAT) && lp->pdata.wait4resp) {
+	if ((status & SYS_STATUS_AAT) && lp->pdata.wait4resp) {
+
 //		dwt_forcetrxoff(); // Turn the RX off
 
 		lp->pdata.wait4resp = 0;
 
-		// Set RX reset
-//		dwt_write8bitoffsetreg(PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_RX);
-		ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_RX, );
-
+		/* Reset RX in case we were late and a frame was already being received */
+		/* Set RX reset */
+		ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_RX, dw1000_set_rx_reset_complete);
 		if (ret)
 			dev_err(printdev(lp), "failed to set rx reset\n");
-
-		// Clear RX reset
-		dwt_write8bitoffsetreg(PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_CLEAR);
-
-		dwt_rxreset(); // Reset in case we were late and a frame was already being received
+	} else {
+		ieee802154_xmit_complete(lp->hw, lp->tx_skb, false);
 	}
-
-	// Read frame info - Only the first two bytes of the register are used here.
-//	finfo16 = dwt_read16bitoffsetreg(RX_FINFO_ID, RX_FINFO_OFFSET);
-	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cbData.datalength, dw1000_irq_read_rx_fifo_info_complete);
-
-	if (ret)
-		dev_err(printdev(lp), "failed to read rx fifo info\n");
 }
 
-
-
 static void
-dw1000_irq_read_status_complete(void *context)
+dw1000_clear_rx_err_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	// Clear all receive status bits
-	ret = dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_RX_GOOD, dw1000_irq_clear_rx_status_complete);
 
-	// Handle RX good frame event
-	if (lp->irq_status & SYS_STATUS_RXFCG) {
-//		u16 finfo16;
-//		u16 len;
+	// Because of an issue with receiver restart after error conditions, an RX reset must be applied after any error or timeout event to ensure
+	// the next good frame's timestamp is computed correctly.
+	// See section "RX Message timestamp" in DW1000 User Manual.
 
-		// Clear all receive status bits
-		ret = dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_RX_GOOD, dw1000_irq_clear_rx_status_complete);
-//		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_GOOD); // Clear all receive status bits
+	/* Set RX reset */
+	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_RX, dw1000_set_rx_reset_complete);
 
-//		pdw1000local->cbData.rx_flags = 0;
+	if (ret)
+		dev_err(printdev(lp), "failed to set rx reset\n");
+}
 
+static void
+dw1000_irq_read_status_complete(void *context)
+{
+	int ret;
+	u32 status;
 
-		// Read frame info - Only the first two bytes of the register are used here.
-//		finfo16 = dwt_read16bitoffsetreg(RX_FINFO_ID, RX_FINFO_OFFSET);
+	struct dw1000_local *lp = context;
 
-		// Report frame length - Standard frame length up to 127, extended frame length up to 1023 bytes
-//		len = finfo16 & RX_FINFO_RXFL_MASK_1023;
-//		if (pdw1000local->longFrames == 0) {
-//			len &= RX_FINFO_RXFLEN_MASK;
-//		}
-//		pdw1000local->cbData.datalength = len;
+	le32_to_cpus(&lp->pdata.cbData.status);
+	status = lp->pdata.cbData.status;
 
-		// Report ranging bit
-//		if (finfo16 & RX_FINFO_RNG) {
-//			pdw1000local->cbData.rx_flags |= DWT_CB_DATA_RX_FLAG_RNG;
-//		}
+	dev_dbg(printdev(lp), "%s(0x%x)\n", __func__, status);
 
-		// Report frame control - First bytes of the received frame.
-//		dwt_readfromdevice(RX_BUFFER_ID, 0, FCTRL_LEN_MAX, pdw1000local->cbData.fctrl);
-
-		// Because of a previous frame not being received properly, AAT bit can be set upon the proper reception of a frame not requesting for
-		// acknowledgement (ACK frame is not actually sent though). If the AAT bit is set, check ACK request bit in frame control to confirm (this
-		// implementation works only for IEEE802.15.4-2011 compliant frames).
-		// This issue is not documented at the time of writing this code. It should be in next release of DW1000 User Manual (v2.09, from July 2016).
-//		if ((status & SYS_STATUS_AAT) && ((pdw1000local->cbData.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
-//			dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_AAT); // Clear AAT status bit in register
-//			pdw1000local->cbData.status &= ~SYS_STATUS_AAT; // Clear AAT status bit in callback data register copy
-//			pdw1000local->wait4resp = 0;
-//		}
-//
-//		// Call the corresponding callback if present
-//		if (pdw1000local->cbRxOk != NULL) {
-//			pdw1000local->cbRxOk(&pdw1000local->cbData);
-//		}
-//
-//		if (pdw1000local->dblbuffon) {
-//			// Toggle the Host side Receive Buffer Pointer
-//			dwt_write8bitoffsetreg(SYS_CTRL_ID, SYS_CTRL_HRBT_OFFSET, 1);
-//		}
+	/* Handle RX good frame event */
+	if (status & SYS_STATUS_RXFCG) {
+		/* Clear all receive status bits */
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_RX_GOOD, dw1000_clear_rx_status_complete);
+		if (ret)
+			dev_err(printdev(lp), "failed to clear all receive status bits\n");
 	}
 
-	// Handle TX confirmation event
-	if (lp->irq_status & SYS_STATUS_TXFRS) {
-//		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_TX); // Clear TX event bits
-
+	/* Handle TX confirmation event */
+	if (status & SYS_STATUS_TXFRS) {
 		/* Clear TX event bits */
-		ret = dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_TX, dw1000_irq_clear_tx_status_complete);
-
-		// In the case where this TXFRS interrupt is due to the automatic transmission of an ACK solicited by a response (with ACK request bit set)
-		// that we receive through using wait4resp to a previous TX (and assuming that the IRQ processing of that TX has already been handled), then
-		// we need to handle the IC issue which turns on the RX again in this situation (i.e. because it is wrongly applying the wait4resp after the
-		// ACK TX).
-		// See section "Transmit and automatically wait for response" in DW1000 User Manual
-//		if ((status & SYS_STATUS_AAT) && lp->pdata.wait4resp) {
-//			dwt_forcetrxoff(); // Turn the RX off
-//			dwt_rxreset(); // Reset in case we were late and a frame was already being received
-//		}
-
-		// Call the corresponding callback if present
-//		if (pdw1000local->cbTxDone != NULL) {
-//			pdw1000local->cbTxDone(&pdw1000local->cbData);
-//		}
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_TX, dw1000_clear_tx_status_complete);
+		if (ret)
+			dev_err(printdev(lp), "failed to clear TX event bits\n");
 	}
 
 	// Handle frame reception/preamble detect timeout events
-	if (lp->irq_status & SYS_STATUS_ALL_RX_TO) {
-		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXRFTO); // Clear RX timeout event bits
-
-		pdw1000local->wait4resp = 0;
+//	if (lp->irq_status & SYS_STATUS_ALL_RX_TO) {
+//		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXRFTO); // Clear RX timeout event bits
+//
+//		pdw1000local->wait4resp = 0;
 
 		// Because of an issue with receiver restart after error conditions, an RX reset must be applied after any error or timeout event to ensure
 		// the next good frame's timestamp is computed correctly.
 		// See section "RX Message timestamp" in DW1000 User Manual.
-		dwt_forcetrxoff();
-		dwt_rxreset();
+//		dwt_forcetrxoff();
+//		dwt_rxreset();
 
 		// Call the corresponding callback if present
 //		if (pdw1000local->cbRxTo != NULL) {
 //			pdw1000local->cbRxTo(&pdw1000local->cbData);
 //		}
-	}
+//	}
 
-	// Handle RX errors events
+	/* Handle RX errors events */
 	if (status & SYS_STATUS_ALL_RX_ERR) {
-		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR); // Clear RX error event bits
 
-		pdw1000local->wait4resp = 0;
+		lp->pdata.wait4resp = 0;
 
-		// Because of an issue with receiver restart after error conditions, an RX reset must be applied after any error or timeout event to ensure
-		// the next good frame's timestamp is computed correctly.
-		// See section "RX Message timestamp" in DW1000 User Manual.
-		dwt_forcetrxoff();
-		dwt_rxreset();
-
-		// Call the corresponding callback if present
-//		if (pdw1000local->cbRxErr != NULL) {
-//			pdw1000local->cbRxErr(&pdw1000local->cbData);
-//		}
+		/* Clear RX error event bits */
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_RX_ERR, dw1000_clear_rx_err_complete);
+		if (ret)
+			dev_err(printdev(lp), "failed to clear rx error event bits\n");
 	}
 
+	/* Clear events */
+	dev_dbg(printdev(lp), "clear not concerned events\n");
+
+	ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, status, NULL);
+	if (ret)
+		dev_err(printdev(lp), "failed to clear not concerned events\n");
 }
 
 static irqreturn_t
@@ -1634,9 +1629,10 @@ dw1000_isr(int irq, void *data)
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	/* Read status register low 32bits */
-	ret = dw1000_async_read_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->pdata.cbData.status, dw1000_irq_read_status_complete); // Read status register low 32bits
+	ret = dw1000_async_read_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->pdata.cbData.status, dw1000_irq_read_status_complete);
 
 	if (ret) {
+		dev_dbg(printdev(lp), "failed to async spi read\n");
 		enable_irq(irq);
 		return IRQ_NONE;
 	}
@@ -1644,9 +1640,79 @@ dw1000_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static void
+dw1000_set_tx_fctrl_complete(void *context)
+{
+	int ret;
+	struct dw1000_local *lp = context;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_TXSTRT, NULL);
+	if (ret)
+		dev_err(printdev(lp), "failed to start tx\n");
+}
+static void
+dw1000_write_tx_buff_complete(void *context)
+{
+	int ret;
+	u16 txBufferOffset = 0;
+	int ranging = 0;
+	struct dw1000_local *lp = context;
+
+	u32 reg32 = lp->pdata.txFCTRL | (lp->tx_skb->len + 2) | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
+
+	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", reg32);
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	/* Zero offset in TX buffer, no ranging. */
+//	dwt_writetxfctrl(sizeof(tx_msg), 0, 0);
+
+	// Write the frame length to the TX frame control register
+	// pdw1000local->txFCTRL has kept configured bit rate information
+//	uint32 reg32 = pdw1000local->txFCTRL | txFrameLength | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
+//	dwt_write32bitreg(TX_FCTRL_ID, reg32);
+
+	/* Start transmission. */
+//	dwt_starttx(DWT_START_TX_IMMEDIATE);
+
+//	temp |= (uint8)SYS_CTRL_TXSTRT;
+//	dwt_write8bitoffsetreg(SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
+
+	ret = dw1000_async_write_32bit_reg(lp, TX_FCTRL_ID, 0, reg32, dw1000_set_tx_fctrl_complete);
+	if (ret)
+		dev_err(printdev(lp), "failed to set tx fctrl\n");
+
+}
+
 static int
 dw1000_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 {
+	int ret;
+	struct dw1000_local *lp = hw->priv;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	lp->tx_skb = skb;
+
+	print_hex_dump_debug("dw1000 tx: ", DUMP_PREFIX_OFFSET, 16, 1,
+			     skb->data, skb->len, 0);
+
+	lp->is_tx = 1;
+
+	/* Write frame data to DW1000 and prepare transmission. See NOTE 4 below.*/
+
+//	dwt_writetxdata(sizeof(tx_msg), tx_msg, 0); /* Zero offset in TX buffer. */
+//
+//	dwt_writetodevice(TX_BUFFER_ID, txBufferOffset, txFrameLength - 2, txFrameBytes);
+
+	ret = dw1000_async_write_reg(lp, TX_BUFFER_ID, 0, skb->len, skb->data, dw1000_write_tx_buff_complete);
+	if (ret)
+		dev_err(printdev(lp), "failed to write tx buff\n");
+
+//	dwt_writetxfctrl(sizeof(tx_msg), 0, 0); /* Zero offset in TX buffer, no ranging. */
+
 	return 0;
 }
 
@@ -1731,8 +1797,9 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 static int
 dw1000_start(struct ieee802154_hw *hw)
 {
-	u16 temp;
-	u8 temp1;
+//	u16 temp;
+//	u8 temp1;
+	u32 status;
 	int mode = DW1000_START_RX_IMMEDIATE;
 
 	struct dw1000_local *lp = hw->priv;
@@ -1744,31 +1811,44 @@ dw1000_start(struct ieee802154_hw *hw)
 		dw1000_sync_rx_buf_ptrs(lp);
 	}
 
-	temp = (u16)SYS_CTRL_RXENAB;
+//	temp = (u16)SYS_CTRL_RXENAB;
+//
+//	if (mode & DW1000_START_RX_DELAYED) {
+//		temp |= (u16)SYS_CTRL_RXDLYE;
+//	}
 
-	if (mode & DW1000_START_RX_DELAYED) {
-		temp |= (u16)SYS_CTRL_RXDLYE;
-	}
-
-	dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
+	// dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
 
 	/* check for errors */
-	if (mode & DW1000_START_RX_DELAYED) {
-		/* Read 1 byte at offset 3 to get the 4th byte out of 5 */
-		dw1000_read_8bit_reg(lp, SYS_STATUS_ID, 3, &temp1);
-		/* if delay has passed do immediate RX on unless DWT_IDLE_ON_DLY_ERR is true */
-		if ((temp1 & (SYS_STATUS_HPDWARN >> 24)) != 0) {
+//	if (mode & DW1000_START_RX_DELAYED) {
+//		/* Read 1 byte at offset 3 to get the 4th byte out of 5 */
+//		dw1000_read_8bit_reg(lp, SYS_STATUS_ID, 3, &temp1);
+//		/* if delay has passed do immediate RX on unless DWT_IDLE_ON_DLY_ERR is true */
+//		if ((temp1 & (SYS_STATUS_HPDWARN >> 24)) != 0) {
+//
+//			/* turn the delayed receive off */
+//			//dwt_forcetrxoff();
+//			dw1000_force_trx_off(lp);
+//			/* if DWT_IDLE_ON_DLY_ERR not set then re-enable receiver */
+//			if ((mode & DW1000_IDLE_ON_DLY_ERR) == 0) {
+//				dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
+//			}
+//			return DW1000_ERROR; // return warning indication
+//		}
+//	}
 
-			/* turn the delayed receive off */
-			//dwt_forcetrxoff();
-			dw1000_force_trx_off(lp);
-			/* if DWT_IDLE_ON_DLY_ERR not set then re-enable receiver */
-			if ((mode & DW1000_IDLE_ON_DLY_ERR) == 0) {
-				dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
-			}
-			return DW1000_ERROR; // return warning indication
-		}
-	}
+	/* Disable the radio */
+	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8)SYS_CTRL_TRXOFF);
+
+	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, DW1000_INT_TFRS | DW1000_INT_RFCG);
+
+	enable_irq(lp->spi->irq);
+
+//	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, 0x3FF7FFFEUL);
+
+	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &status);
+
+	dev_dbg(printdev(lp), "SYS MASK:0x%x\n", status);
 
 	return DW1000_SUCCESS;
 //	return 0;
@@ -1974,14 +2054,27 @@ dw1000_setup_reg_messages(struct dw1000_local *lp)
 	spi_message_init(&lp->reg_msg);
 	lp->reg_msg.context = lp;
 
-	lp->reg_addr_xfer.len = 3;
 	lp->reg_addr_xfer.tx_buf = lp->reg_addr;
 
-	lp->reg_val_xfer.tx_buf = lp->reg_val;
-	lp->reg_val_xfer.rx_buf = lp->reg_val;
+//	lp->reg_val_xfer.tx_buf = lp->reg_val;
+//	lp->reg_val_xfer.rx_buf = lp->reg_val;
 
 	spi_message_add_tail(&lp->reg_addr_xfer, &lp->reg_msg);
 	spi_message_add_tail(&lp->reg_val_xfer, &lp->reg_msg);
+}
+
+static void
+dw1000_setup_async_read_messages(struct dw1000_local *lp) {
+	spi_message_init(&lp->async_read_msg);
+	lp->async_read_msg.context = lp;
+
+	lp->async_read_header_xfer.tx_buf = lp->async_read_header;
+
+//	lp->async_read_data_xfer.tx_buf = lp->reg_val;
+//	lp->async_read_data_xfer.rx_buf = lp->irq_reg_data;
+
+	spi_message_add_tail(&lp->async_read_header_xfer, &lp->async_read_msg);
+	spi_message_add_tail(&lp->async_read_data_xfer, &lp->async_read_msg);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2173,17 +2266,16 @@ static struct dentry *dw1000_debugfs_root;
 
 static int dw1000_configs_show(struct seq_file *file, void *offset)
 {
-//	struct dw1000_local *lp = file->private;
-
-//	seq_printf(file, "SUCCESS:\t\t%8llu\n", lp->trac.success);
-//	seq_printf(file, "SUCCESS_DATA_PENDING:\t%8llu\n",
-//		   lp->trac.success_data_pending);
-//	seq_printf(file, "SUCCESS_WAIT_FOR_ACK:\t%8llu\n",
-//		   lp->trac.success_wait_for_ack);
-//	seq_printf(file, "CHANNEL_ACCESS_FAILURE:\t%8llu\n",
-//		   lp->trac.channel_access_failure);
-//	seq_printf(file, "NO_ACK:\t\t\t%8llu\n", lp->trac.no_ack);
-//	seq_printf(file, "INVALID:\t\t%8llu\n", lp->trac.invalid);
+	struct dw1000_local *lp = file->private;
+	seq_printf(file, "Data Rate:\t\t\t%d\n", lp->config.dataRate);
+	seq_printf(file, "Use Non-standard SFD:\t\t%d\n", lp->config.nsSFD);
+	seq_printf(file, "PHR Mode:\t\t\t%d\n", lp->config.phrMode);
+	seq_printf(file, "Pulse Repetition Frequency:\t%d\n", lp->config.prf);
+	seq_printf(file, "RX Preamble Code:\t\t%d\n", lp->config.rxCode);
+	seq_printf(file, "RX Acquisition Chunk Size:\t%d\n", lp->config.rxPAC);
+	seq_printf(file, "SFD Timeout:\t\t\t%d\n", lp->config.sfdTO);
+	seq_printf(file, "TX Preamble Code:\t\t%d\n", lp->config.txCode);
+	seq_printf(file, "TX Preamble Length:\t\t%d\n", lp->config.txPreambLength);
 	return 0;
 }
 
@@ -2238,13 +2330,13 @@ static int dw1000_debugfs_init(struct dw1000_local *lp)
 	if (!dw1000_debugfs_root)
 		return -ENOMEM;
 
-	stats = debugfs_create_file("configurations", S_IRUGO,
+	stats = debugfs_create_file("config", S_IRUGO,
 		dw1000_debugfs_root, lp,
 		&dw1000_configs_fops);
 	if (!stats)
 		return -ENOMEM;
 
-	stats = debugfs_create_file("device_data", S_IRUGO,
+	stats = debugfs_create_file("data", S_IRUGO,
 		dw1000_debugfs_root, lp,
 		&dw1000_dev_data_fops);
 	if (!stats)
@@ -2287,19 +2379,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	u8 prfIndex = config->prf - DW1000_PRF_16M;
 	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
 
-//#ifdef DWT_API_ERROR_CHECK
-//	assert(config->dataRate <= DWT_BR_6M8);
-//	assert(config->rxPAC <= DWT_PAC64);
-//	assert((chan >= 1) && (chan <= 7) && (chan != 6));
-//	assert(((config->prf == DWT_PRF_64M) && (config->txCode >= 9) && (config->txCode <= 24))
-//		|| ((config->prf == DWT_PRF_16M) && (config->txCode >= 1) && (config->txCode <= 8)));
-//	assert(((config->prf == DWT_PRF_64M) && (config->rxCode >= 9) && (config->rxCode <= 24))
-//		|| ((config->prf == DWT_PRF_16M) && (config->rxCode >= 1) && (config->rxCode <= 8)));
-//	assert((config->txPreambLength == DWT_PLEN_64) || (config->txPreambLength == DWT_PLEN_128) || (config->txPreambLength == DWT_PLEN_256)
-//		|| (config->txPreambLength == DWT_PLEN_512) || (config->txPreambLength == DWT_PLEN_1024) || (config->txPreambLength == DWT_PLEN_1536)
-//		|| (config->txPreambLength == DWT_PLEN_2048) || (config->txPreambLength == DWT_PLEN_4096));
-//	assert((config->phrMode == DWT_PHRMODE_STD) || (config->phrMode == DWT_PHRMODE_EXT));
-//#endif
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// For 110 kbps we need a special setup
 	if (DW1000_BR_110K == config->dataRate) {
@@ -2379,10 +2459,15 @@ void dw1000_configure(struct dw1000_local *lp) {
 		(CHAN_CTRL_TX_PCOD_MASK & (config->txCode << CHAN_CTRL_TX_PCOD_SHIFT)) | // TX Preamble Code
 		(CHAN_CTRL_RX_PCOD_MASK & (config->rxCode << CHAN_CTRL_RX_PCOD_SHIFT)); // RX Preamble Code
 
+	dev_dbg(printdev(lp), "CHAN_CTRL:0x%x\n", regval);
+
 	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
 
 	// Set up TX Preamble Size, PRF and Data Rate
 	lp->pdata.txFCTRL = ((config->txPreambLength | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->dataRate << TX_FCTRL_TXBR_SHFT);
+
+	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.txFCTRL);
+
 	dw1000_write_32bit_reg(lp, TX_FCTRL_ID, 0, lp->pdata.txFCTRL);
 
 	// The SFD transmit pattern is initialised by the DW1000 upon a user TX request, but (due to an IC issue) it is not done for an auto-ACK TX. The
@@ -2472,17 +2557,6 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 //	lp->pdata.cbRxOk = NULL;
 //	lp->pdata.cbRxTo = NULL;
 //	lp->pdata.cbRxErr = NULL;
-
-	lp->config.chan = 2;				/* Channel number. */
-	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
-	lp->config.txPreambLength = DW1000_PLEN_1024;	/* Preamble length. Used in TX only. */
-	lp->config.rxPAC = DW1000_PAC32;		/* Preamble acquisition chunk size. Used in RX only. */
-	lp->config.txCode = 9;				/* TX preamble code. Used in TX only. */
-	lp->config.rxCode = 9;				/* RX preamble code. Used in RX only. */
-	lp->config.nsSFD = 0; 				/* 0 to use standard SFD, 1 to use non-standard SFD. */
-	lp->config.dataRate = DW1000_BR_110K;		/* Data rate. */
-	lp->config.phrMode = DW1000_PHRMODE_STD;	/* PHY header mode. */
-	lp->config.sfdTO = (1025 + 64 - 32);		/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	/* Make sure the device is completely reset before starting initialisation */
 	dw1000_soft_reset(lp);
@@ -2635,7 +2709,7 @@ static int dw1000_probe(struct spi_device *spi)
 
 	/* Reset */
 	gpiod_set_value_cansleep(rstn, 1);
-	udelay(1);
+	udelay(4);
 	gpiod_set_value_cansleep(rstn, 0);
 	usleep_range(120, 240);
 
@@ -2650,23 +2724,13 @@ static int dw1000_probe(struct spi_device *spi)
 	hw->parent = &spi->dev;
 	ieee802154_random_extended_addr(&hw->phy->perm_extended_addr);
 
-//	lp->regmap = devm_regmap_init_spi(spi, &dw1000_regmap_spi_config);
-//	if (IS_ERR(lp->regmap)) {
-//		rc = PTR_ERR(lp->regmap);
-//		dev_err(&spi->dev, "Failed to allocate register map: %d\n",
-//			rc);
-//		goto free_dev;
-//	}
-
-//	dw1000_setup_spi_messages(lp, &lp->state);
-//	dw1000__setup_spi_messages(lp, &lp->tx);
-
 	lp->buf = devm_kzalloc(&spi->dev,
 				 SPI_COMMAND_BUFFER, GFP_KERNEL);
 	if (!lp->buf)
 		return -ENOMEM;
 
 	dw1000_setup_reg_messages(lp);
+	dw1000_setup_async_read_messages(lp);
 
 	rc = dw1000_detect_device(lp);
 	if (rc < 0)
@@ -2688,13 +2752,26 @@ static int dw1000_probe(struct spi_device *spi)
 //		goto free_dev;
 
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
-			      IRQF_SHARED | IRQF_TRIGGER_HIGH,
+			      IRQF_TRIGGER_HIGH,
 			      dev_name(&spi->dev), lp);
 	if (rc)
 		goto free_dev;
 
 	/* disable_irq by default and wait for starting hardware */
 	disable_irq(spi->irq);
+
+	lp->config.chan = 2;                            /* Channel number. */
+	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
+	lp->config.txPreambLength = DW1000_PLEN_1024;   /* Preamble length. Used in TX only. */
+	lp->config.rxPAC = DW1000_PAC32;                /* Preamble acquisition chunk size. Used in RX only. */
+	lp->config.txCode = 9;                          /* TX preamble code. Used in TX only. */
+	lp->config.rxCode = 9;                          /* RX preamble code. Used in RX only. */
+	lp->config.nsSFD = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
+	lp->config.dataRate = DW1000_BR_6M8;           /* Data rate. */
+	lp->config.phrMode = DW1000_PHRMODE_STD;        /* PHY header mode. */
+	lp->config.sfdTO = (1025 + 64 - 32);            /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+
+	dw1000_configure(lp);
 
 	/* going into sleep by default */
 	//dw1000_sleep(lp);
