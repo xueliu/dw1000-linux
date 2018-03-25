@@ -406,11 +406,11 @@ struct dw1000_local {
 
 //	u32 irq_status;
 
-	/* SPI transaction with 3-octet header */
+	/* async spi write */
 	struct spi_message reg_msg;
 	u8 reg_addr[3];
 	struct spi_transfer reg_addr_xfer;
-//	u8 reg_val[16];
+	u32 reg_val;
 	struct spi_transfer reg_val_xfer;
 
 	/* async spi read */
@@ -775,6 +775,8 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
 //		.tx_buf = header,
 //	};
 
+	dev_dbg(printdev(lp), "data:0x%x\n", *(u32*)(data));
+
 	lp->reg_val_xfer.len = length;
 	lp->reg_val_xfer.tx_buf = data;
 //	struct spi_transfer data_xfer = {
@@ -835,8 +837,8 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
  * no return value
  */
 static int
-dw1000_async_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 data, void (*complete)(void *context)) {
-	return dw1000_async_write_reg(lp, addr, index, 1, &data, complete);
+dw1000_async_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data, void (*complete)(void *context)) {
+	return dw1000_async_write_reg(lp, addr, index, 1, data, complete);
 }
 
 
@@ -856,9 +858,9 @@ dw1000_async_write_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 dat
  * no return value
  */
 static int
-dw1000_async_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 data, void (*complete)(void *context)) {
+dw1000_async_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 *data, void (*complete)(void *context)) {
 	cpu_to_le16s(&data);
-	return dw1000_async_write_reg(lp, addr, index, 2, &data, complete);
+	return dw1000_async_write_reg(lp, addr, index, 2, data, complete);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -877,9 +879,9 @@ dw1000_async_write_16bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u16 d
  * no return value
  */
 static int
-dw1000_async_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data, void (*complete)(void *context)) {
+dw1000_async_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 *data, void (*complete)(void *context)) {
 	cpu_to_le32s(&data);
-	return dw1000_async_write_reg(lp, addr, index, 4, &data, complete);
+	return dw1000_async_write_reg(lp, addr, index, 4, data, complete);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1416,7 +1418,9 @@ dw1000_irq_read_rx_buf_complete(void *context)
 	if ((status & SYS_STATUS_AAT) && ((lp->pdata.cbData.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
 		/* Clear AAT status bit in register */
 //		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_AAT);
-		dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_AAT, NULL);
+		lp->reg_val = SYS_STATUS_AAT;
+		dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, NULL);
+
 		/* Clear AAT status bit in callback data register copy */
 		lp->pdata.cbData.status &= ~SYS_STATUS_AAT;
 		lp->pdata.wait4resp = 0;
@@ -1496,7 +1500,8 @@ dw1000_set_rx_reset_complete(void *context)
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	/* Clear RX reset */
-	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_CLEAR, dw1000_clear_rx_reset_complete);
+	lp->reg_val = PMSC_CTRL0_RESET_CLEAR;
+	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, (u8 *)&lp->reg_val, dw1000_clear_rx_reset_complete);
 	if (ret)
 		dev_err(printdev(lp), "failed to clear rx reset\n");
 
@@ -1524,10 +1529,12 @@ dw1000_clear_tx_status_complete(void *context)
 
 		/* Reset RX in case we were late and a frame was already being received */
 		/* Set RX reset */
-		ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_RX, dw1000_set_rx_reset_complete);
+		lp->reg_val = PMSC_CTRL0_RESET_RX;
+		ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET,  (u8 *)&lp->reg_val, dw1000_set_rx_reset_complete);
 		if (ret)
 			dev_err(printdev(lp), "failed to set rx reset\n");
 	} else {
+		lp->is_tx = 0;
 		ieee802154_xmit_complete(lp->hw, lp->tx_skb, false);
 	}
 }
@@ -1546,7 +1553,8 @@ dw1000_clear_rx_err_complete(void *context)
 	// See section "RX Message timestamp" in DW1000 User Manual.
 
 	/* Set RX reset */
-	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, PMSC_CTRL0_RESET_RX, dw1000_set_rx_reset_complete);
+	lp->reg_val = PMSC_CTRL0_RESET_RX;
+	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, (u8 *)&lp->reg_val, dw1000_set_rx_reset_complete);
 
 	if (ret)
 		dev_err(printdev(lp), "failed to set rx reset\n");
@@ -1563,20 +1571,26 @@ dw1000_irq_read_status_complete(void *context)
 	le32_to_cpus(&lp->pdata.cbData.status);
 	status = lp->pdata.cbData.status;
 
-	dev_dbg(printdev(lp), "%s(0x%x)\n", __func__, status);
+	dev_dbg(printdev(lp), "%s\n", __func__);
+	dev_dbg(printdev(lp), "SYS_STATUS: 0x%x\n", status);
 
 	/* Handle RX good frame event */
 	if (status & SYS_STATUS_RXFCG) {
+		dev_dbg(printdev(lp), "RX is done\n");
 		/* Clear all receive status bits */
-		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_RX_GOOD, dw1000_clear_rx_status_complete);
+
+		lp->reg_val = SYS_STATUS_ALL_RX_GOOD;
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_rx_status_complete);
 		if (ret)
 			dev_err(printdev(lp), "failed to clear all receive status bits\n");
 	}
 
 	/* Handle TX confirmation event */
 	if (status & SYS_STATUS_TXFRS) {
+		dev_dbg(printdev(lp), "TX is done\n");
 		/* Clear TX event bits */
-		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_TX, dw1000_clear_tx_status_complete);
+		lp->reg_val = SYS_STATUS_ALL_TX;
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_tx_status_complete);
 		if (ret)
 			dev_err(printdev(lp), "failed to clear TX event bits\n");
 	}
@@ -1605,17 +1619,18 @@ dw1000_irq_read_status_complete(void *context)
 		lp->pdata.wait4resp = 0;
 
 		/* Clear RX error event bits */
-		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, SYS_STATUS_ALL_RX_ERR, dw1000_clear_rx_err_complete);
+		lp->reg_val = SYS_STATUS_ALL_RX_ERR;
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_rx_err_complete);
 		if (ret)
 			dev_err(printdev(lp), "failed to clear rx error event bits\n");
 	}
 
 	/* Clear events */
-	dev_dbg(printdev(lp), "clear not concerned events\n");
+//	dev_dbg(printdev(lp), "clear not concerned events\n");
 
-	ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, status, NULL);
-	if (ret)
-		dev_err(printdev(lp), "failed to clear not concerned events\n");
+//	ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, status, NULL);
+//	if (ret)
+//		dev_err(printdev(lp), "failed to clear not concerned events\n");
 }
 
 static irqreturn_t
@@ -1626,7 +1641,7 @@ dw1000_isr(int irq, void *data)
 
 	disable_irq_nosync(irq);
 
-	dev_dbg(printdev(lp), "%s\n", __func__);
+	dev_err(printdev(lp), "%s\n", __func__);
 
 	/* Read status register low 32bits */
 	ret = dw1000_async_read_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->pdata.cbData.status, dw1000_irq_read_status_complete);
@@ -1648,7 +1663,8 @@ dw1000_set_tx_fctrl_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_TXSTRT, NULL);
+	lp->reg_val = SYS_CTRL_TXSTRT;
+	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8 *)&lp->reg_val, NULL);
 	if (ret)
 		dev_err(printdev(lp), "failed to start tx\n");
 }
@@ -1657,12 +1673,17 @@ dw1000_write_tx_buff_complete(void *context)
 {
 	int ret;
 	u16 txBufferOffset = 0;
+	/* no ranging */
 	int ranging = 0;
 	struct dw1000_local *lp = context;
+	unsigned int len = lp->tx_skb->len;
 
-	u32 reg32 = lp->pdata.txFCTRL | (lp->tx_skb->len + 2) | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
 
-	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", reg32);
+	len = len + 2;
+
+	lp->reg_val = lp->pdata.txFCTRL | len | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
+
+	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->reg_val);
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -1680,7 +1701,7 @@ dw1000_write_tx_buff_complete(void *context)
 //	temp |= (uint8)SYS_CTRL_TXSTRT;
 //	dwt_write8bitoffsetreg(SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
 
-	ret = dw1000_async_write_32bit_reg(lp, TX_FCTRL_ID, 0, reg32, dw1000_set_tx_fctrl_complete);
+	ret = dw1000_async_write_32bit_reg(lp, TX_FCTRL_ID, 0, &lp->reg_val, dw1000_set_tx_fctrl_complete);
 	if (ret)
 		dev_err(printdev(lp), "failed to set tx fctrl\n");
 
@@ -1838,7 +1859,7 @@ dw1000_start(struct ieee802154_hw *hw)
 //	}
 
 	/* Disable the radio */
-	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8)SYS_CTRL_TRXOFF);
+//	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8)SYS_CTRL_TRXOFF);
 
 	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, DW1000_INT_TFRS | DW1000_INT_RFCG);
 
@@ -2264,6 +2285,40 @@ void _dw1000_load_ucode_from_rom(struct dw1000_local *lp)
 //#ifdef CONFIG_IEEE802154_DW1000_DEBUGFS
 static struct dentry *dw1000_debugfs_root;
 
+static int dw1000_reg_show(struct seq_file *file, void *offset) {
+	struct dw1000_local *lp = file->private;
+	u32 sys_status;
+	u32 sys_cfg;
+	u32 sys_ctrl;
+	u32 sys_mask;
+
+	dw1000_read_32bit_reg(lp, SYS_STATUS_ID, 0, &sys_status);
+	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &sys_cfg);
+	dw1000_read_32bit_reg(lp, SYS_CTRL_ID, 0, &sys_ctrl);
+	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &sys_mask);
+
+
+	seq_printf(file, "SYS_STATUS:\t0x%x\n", sys_status);
+	seq_printf(file, "SYS_CFG_ID:\t0x%x\n", sys_cfg);
+	seq_printf(file, "SYS_CTRL_ID:\t0x%x\n", sys_ctrl);
+	seq_printf(file, "SYS_MASK_ID:\t0x%x\n", sys_mask);
+
+	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, sys_status);
+
+	return 0;
+}
+
+static int dw1000_reg_open(struct inode *inode, struct file *file) {
+	return single_open(file, dw1000_reg_show, inode->i_private);
+}
+
+static const struct file_operations dw1000_reg_fops = {
+	.open		= dw1000_reg_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int dw1000_configs_show(struct seq_file *file, void *offset)
 {
 	struct dw1000_local *lp = file->private;
@@ -2328,6 +2383,12 @@ static int dw1000_debugfs_init(struct dw1000_local *lp)
 
 	dw1000_debugfs_root = debugfs_create_dir(debugfs_dir_name, NULL);
 	if (!dw1000_debugfs_root)
+		return -ENOMEM;
+
+	stats = debugfs_create_file("reg", S_IRUGO,
+		dw1000_debugfs_root, lp,
+		&dw1000_reg_fops);
+	if (!stats)
 		return -ENOMEM;
 
 	stats = debugfs_create_file("config", S_IRUGO,
