@@ -1472,6 +1472,8 @@ dw1000_clear_rx_status_complete(void *context)
 
 	lp->pdata.cbData.rx_flags = 0;
 
+	enable_irq(lp->spi->irq);
+
 	/* Read frame info - Only the first two bytes of the register are used here */
 //	finfo16 = dwt_read16bitoffsetreg(RX_FINFO_ID, RX_FINFO_OFFSET);
 	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cbData.datalength, dw1000_read_rx_fifo_info_complete);
@@ -1515,6 +1517,8 @@ dw1000_clear_tx_status_complete(void *context)
 	u32 status = lp->pdata.cbData.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	enable_irq(lp->spi->irq);
 
 	// In the case where this TXFRS interrupt is due to the automatic transmission of an ACK solicited by a response (with ACK request bit set)
 	// that we receive through using wait4resp to a previous TX (and assuming that the IRQ processing of that TX has already been handled), then
