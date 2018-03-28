@@ -1672,6 +1672,7 @@ dw1000_set_tx_fctrl_complete(void *context)
 	if (ret)
 		dev_err(printdev(lp), "failed to start tx\n");
 }
+
 static void
 dw1000_write_tx_buff_complete(void *context)
 {
@@ -1685,25 +1686,12 @@ dw1000_write_tx_buff_complete(void *context)
 
 	len = len + 2;
 
+	/* Zero offset in TX buffer, no ranging. */
 	lp->reg_val = lp->pdata.txFCTRL | len | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
-
-	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->reg_val);
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	/* Zero offset in TX buffer, no ranging. */
-//	dwt_writetxfctrl(sizeof(tx_msg), 0, 0);
-
-	// Write the frame length to the TX frame control register
-	// pdw1000local->txFCTRL has kept configured bit rate information
-//	uint32 reg32 = pdw1000local->txFCTRL | txFrameLength | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
-//	dwt_write32bitreg(TX_FCTRL_ID, reg32);
-
-	/* Start transmission. */
-//	dwt_starttx(DWT_START_TX_IMMEDIATE);
-
-//	temp |= (uint8)SYS_CTRL_TXSTRT;
-//	dwt_write8bitoffsetreg(SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
+	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->reg_val);
 
 	ret = dw1000_async_write_32bit_reg(lp, TX_FCTRL_ID, 0, &lp->reg_val, dw1000_set_tx_fctrl_complete);
 	if (ret)
@@ -1711,6 +1699,38 @@ dw1000_write_tx_buff_complete(void *context)
 
 }
 
+static void
+dw1000_set_trxoff_complete(void *context)
+{
+	int ret;
+	struct dw1000_local *lp = context;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	lp->is_tx = 1;
+
+	/* Write frame data to DW1000 and prepare transmission */
+	ret = dw1000_async_write_reg(lp, TX_BUFFER_ID, 0, lp->tx_skb->len, lp->tx_skb->data, dw1000_write_tx_buff_complete);
+	if (ret)
+		dev_err(printdev(lp), "failed to write tx buff\n");
+}
+
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_xmit / dwt_starttx()
+ *
+ * @brief This call initiates the transmission, input parameter indicates which TX mode is used see below
+ *
+ * input parameters:
+ * @param mode - if 0 immediate TX (no response expected)
+ *               if 1 delayed TX (no response expected)
+ *               if 2 immediate TX (response expected - so the receiver will be automatically turned on after TX is done)
+ *               if 3 delayed TX (response expected - so the receiver will be automatically turned on after TX is done)
+ *
+ * output parameters
+ *
+ * returns DWT_SUCCESS for success, or DWT_ERROR for error (e.g. a delayed transmission will fail if the delayed time has passed)
+ */
 static int
 dw1000_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 {
@@ -1724,19 +1744,11 @@ dw1000_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 	print_hex_dump_debug("dw1000 tx: ", DUMP_PREFIX_OFFSET, 16, 1,
 			     skb->data, skb->len, 0);
 
-	lp->is_tx = 1;
-
-	/* Write frame data to DW1000 and prepare transmission. See NOTE 4 below.*/
-
-//	dwt_writetxdata(sizeof(tx_msg), tx_msg, 0); /* Zero offset in TX buffer. */
-//
-//	dwt_writetodevice(TX_BUFFER_ID, txBufferOffset, txFrameLength - 2, txFrameBytes);
-
-	ret = dw1000_async_write_reg(lp, TX_BUFFER_ID, 0, skb->len, skb->data, dw1000_write_tx_buff_complete);
+	lp->reg_val = SYS_CTRL_TRXOFF;
+	/* Turn off rx at first */
+	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8 *)&lp->reg_val, dw1000_set_trxoff_complete);
 	if (ret)
-		dev_err(printdev(lp), "failed to write tx buff\n");
-
-//	dwt_writetxfctrl(sizeof(tx_msg), 0, 0); /* Zero offset in TX buffer, no ranging. */
+		dev_err(printdev(lp), "failed to turn off rx\n");
 
 	return 0;
 }
@@ -1747,6 +1759,238 @@ dw1000_ed(struct ieee802154_hw *hw, u8 *level)
 	return 0;
 }
 
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_enable_frame_filter / dwt_enableframefilter()
+ *
+ * @brief This is used to enable the frame filtering - (the default option is to
+ * accept any data and ACK frames with correct destination address
+ *
+ * input parameters
+ * @param - bitmask - enables/disables the frame filtering options according to
+ *      DWT_FF_NOTYPE_EN        0x000   no frame types allowed
+ *      DWT_FF_COORD_EN         0x002   behave as coordinator (can receive frames with no destination address (PAN ID has to match))
+ *      DWT_FF_BEACON_EN        0x004   beacon frames allowed
+ *      DWT_FF_DATA_EN          0x008   data frames allowed
+ *      DWT_FF_ACK_EN           0x010   ack frames allowed
+ *      DWT_FF_MAC_EN           0x020   mac control frames allowed
+ *      DWT_FF_RSVD_EN          0x040   reserved frame types allowed
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static int
+dw1000_enable_frame_filter(struct dw1000_local *lp, u16 enable)
+{
+	int ret;
+	u32 sysconfig;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	/* Read sysconfig register */
+	ret = dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &sysconfig);
+	if (ret) {
+		return ret;
+	}
+	sysconfig &= SYS_CFG_MASK;
+
+	if (enable) {
+		/* Enable frame filtering and configure frame types */
+		sysconfig &= ~(SYS_CFG_FF_ALL_EN); /* Clear all */
+		sysconfig |= (enable & SYS_CFG_FF_ALL_EN) | SYS_CFG_FFE;
+	} else {
+		sysconfig &= ~(SYS_CFG_FFE);
+	}
+
+	lp->pdata.sysCFGreg = sysconfig;
+	return dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, sysconfig);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_enable_auto_ack / dwt_enableautoack()
+ *
+ * @brief This call enables the auto-ACK feature. If the responseDelayTime (parameter) is 0, the ACK will be sent a.s.a.p.
+ * otherwise it will be sent with a programmed delay (in symbols), max is 255.
+ * NOTE: needs to have frame filtering enabled as well
+ *
+ * input parameters
+ * @param response_delay_time - if non-zero the ACK is sent after this delay, max is 255.
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static int
+dw1000_enable_auto_ack(struct dw1000_local *lp, u8 response_delay_time)
+{
+	int ret;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	/* Set auto ACK reply delay */
+	/* In symbols */
+	ret = dw1000_write_8bit_reg(lp, ACK_RESP_T_ID, ACK_RESP_T_ACK_TIM_OFFSET, response_delay_time);
+	if (ret) {
+		return ret;
+	}
+
+	/* Enable auto ACK */
+	lp->pdata.sysCFGreg |= SYS_CFG_AUTOACK;
+	return dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sysCFGreg);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_setinterrupt / dwt_setinterrupt()
+ *
+ * @brief This function enables the specified events to trigger an interrupt.
+ * The following events can be enabled:
+ * DWT_INT_TFRS         0x00000080          // frame sent
+ * DWT_INT_RFCG         0x00004000          // frame received with good CRC
+ * DWT_INT_RPHE         0x00001000          // receiver PHY header error
+ * DWT_INT_RFCE         0x00008000          // receiver CRC error
+ * DWT_INT_RFSL         0x00010000          // receiver sync loss error
+ * DWT_INT_RFTO         0x00020000          // frame wait timeout
+ * DWT_INT_RXPTO        0x00200000          // preamble detect timeout
+ * DWT_INT_SFDT         0x04000000          // SFD timeout
+ * DWT_INT_ARFE         0x20000000          // frame rejected (due to frame filtering configuration)
+ *
+ *
+ * input parameters:
+ * @param bitmask - sets the events which will generate interrupt
+ * @param enable - if set the interrupts are enabled else they are cleared
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static int
+dw1000_setinterrupt(struct dw1000_local *lp, u32 bitmask, u8 enable) {
+
+	int ret;
+//	decaIrqStatus_t stat;
+	u32 mask;
+
+	/* Need to beware of interrupts occurring in the middle of following read modify write cycle */
+//	stat = decamutexon();
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	/* Read irq mask */
+	ret = dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
+
+	if (enable) {
+		mask |= bitmask;
+	} else {
+		/* Clear the bit */
+		mask &= ~bitmask;
+	}
+
+	/* write new value */
+	return dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, mask);
+
+//	decamutexoff(stat);
+}
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_set_lna_pa_mode / dwt_setlnapamode()
+ *
+ * @brief This is used to enable GPIO for external LNA or PA functionality - HW dependent, consult the DW1000 User Manual.
+ *        This can also be used for debug as enabling TX and RX GPIOs is quite handy to monitor DW1000's activity.
+ *
+ * NOTE: Enabling PA functionality requires that fine grain TX sequencing is deactivated. This can be done using
+ *       dwt_setfinegraintxseq().
+ *
+ * input parameters
+ * @param lna - 1 to enable LNA functionality, 0 to disable it
+ * @param pa - 1 to enable PA functionality, 0 to disable it
+ *
+ * output parameters
+ *
+ * no return value
+ */
+void dw1000_set_lna_pa_mode(struct dw1000_local *lp, int lna, int pa) {
+	u32 gpio_mode;
+	int ret;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+//	uint32 gpio_mode = dwt_read32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET);
+	ret = dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, &gpio_mode);
+
+	gpio_mode &= ~(GPIO_MSGP4_MASK | GPIO_MSGP5_MASK | GPIO_MSGP6_MASK);
+	if (lna) {
+		gpio_mode |= GPIO_PIN6_EXTRXE;
+	}
+	if (pa) {
+		gpio_mode |= (GPIO_PIN5_EXTTXE | GPIO_PIN4_EXTPA);
+	}
+//	dwt_write32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET, gpio_mode);
+	ret = dw1000_write_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, gpio_mode);
+}
+
+
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_set_leds / dwt_setleds()
+ *
+ * @brief This is used to set up Tx/Rx GPIOs which could be used to control LEDs
+ * Note: not completely IC dependent, also needs board with LEDS fitted on right I/O lines
+ *       this function enables GPIOs 2 and 3 which are connected to LED3 and LED4 on EVB1000
+ *
+ * input parameters
+ * @param mode - this is a bit field interpreted as follows:
+ *          - bit 0: 1 to enable LEDs, 0 to disable them
+ *          - bit 1: 1 to make LEDs blink once on init. Only valid if bit 0 is set (enable LEDs)
+ *          - bit 2 to 7: reserved
+ *
+ * output parameters none
+ *
+ * no return value
+ */
+void dw1000_set_leds(struct dw1000_local *lp, u8 mode) {
+	u32 reg;
+	int ret;
+
+	dev_dbg(printdev(lp), "%s\n", __func__);
+
+	if (mode & DW1000_LEDS_ENABLE) {
+		/* Set up MFIO for LED output */
+//		reg = dwt_read32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET);
+		ret = dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, &reg);
+		reg &= ~(GPIO_MSGP2_MASK | GPIO_MSGP3_MASK);
+		reg |= (GPIO_PIN2_RXLED | GPIO_PIN3_TXLED);
+//		dwt_write32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
+		ret = dw1000_write_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
+
+		/* Enable LP Oscillator to run from counter and turn on de-bounce clock */
+//		reg = dwt_read32bitoffsetreg(PMSC_ID, PMSC_CTRL0_OFFSET);
+		ret = dw1000_read_32bit_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, &reg);
+		reg |= (PMSC_CTRL0_GPDCE | PMSC_CTRL0_KHZCLEN);
+//		dwt_write32bitoffsetreg(PMSC_ID, PMSC_CTRL0_OFFSET, reg);
+		ret = dw1000_write_32bit_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, reg);
+
+		/* Enable LEDs to blink and set default blink time. */
+		reg = PMSC_LEDC_BLNKEN | PMSC_LEDC_BLINK_TIME_DEF;
+		/* Make LEDs blink once if requested. */
+		if (mode & DW1000_LEDS_INIT_BLINK) {
+			reg |= PMSC_LEDC_BLINK_NOW_ALL;
+		}
+//		dwt_write32bitoffsetreg(PMSC_ID, PMSC_LEDC_OFFSET, reg);
+		ret = dw1000_write_32bit_reg(lp, PMSC_ID, PMSC_LEDC_OFFSET, reg);
+		/* Clear force blink bits if needed. */
+		if (mode & DW1000_LEDS_INIT_BLINK) {
+			reg &= ~PMSC_LEDC_BLINK_NOW_ALL;
+//			dwt_write32bitoffsetreg(PMSC_ID, PMSC_LEDC_OFFSET, reg);
+			ret = dw1000_write_32bit_reg(lp, PMSC_ID, PMSC_LEDC_OFFSET, reg);
+		}
+	} else {
+		/* Clear the GPIO bits that are used for LED control. */
+//		reg = dwt_read32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET);
+		ret = dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, &reg);
+		reg &= ~(GPIO_MSGP2_MASK | GPIO_MSGP3_MASK);
+//		dwt_write32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
+		ret = dw1000_write_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
+	}
+}
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn dwt_forcetrxoff()
@@ -1822,61 +2066,21 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 static int
 dw1000_start(struct ieee802154_hw *hw)
 {
-//	u16 temp;
-//	u8 temp1;
-	u32 status;
 	int mode = DW1000_START_RX_IMMEDIATE;
 
 	struct dw1000_local *lp = hw->priv;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	if ((mode & DW1000_NO_SYNC_PTRS) == 0) {
-//		dwt_syncrxbufptrs();
-		dw1000_sync_rx_buf_ptrs(lp);
-	}
-
-//	temp = (u16)SYS_CTRL_RXENAB;
-//
-//	if (mode & DW1000_START_RX_DELAYED) {
-//		temp |= (u16)SYS_CTRL_RXDLYE;
+//	if ((mode & DW1000_NO_SYNC_PTRS) == 0) {
+//		dw1000_sync_rx_buf_ptrs(lp);
 //	}
 
-	// dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, temp);
-
-	/* check for errors */
-//	if (mode & DW1000_START_RX_DELAYED) {
-//		/* Read 1 byte at offset 3 to get the 4th byte out of 5 */
-//		dw1000_read_8bit_reg(lp, SYS_STATUS_ID, 3, &temp1);
-//		/* if delay has passed do immediate RX on unless DWT_IDLE_ON_DLY_ERR is true */
-//		if ((temp1 & (SYS_STATUS_HPDWARN >> 24)) != 0) {
-//
-//			/* turn the delayed receive off */
-//			//dwt_forcetrxoff();
-//			dw1000_force_trx_off(lp);
-//			/* if DWT_IDLE_ON_DLY_ERR not set then re-enable receiver */
-//			if ((mode & DW1000_IDLE_ON_DLY_ERR) == 0) {
-//				dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
-//			}
-//			return DW1000_ERROR; // return warning indication
-//		}
-//	}
-
-	/* Disable the radio */
-//	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8)SYS_CTRL_TRXOFF);
-
-	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, DW1000_INT_TFRS | DW1000_INT_RFCG);
+	dw1000_setinterrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
 
 	enable_irq(lp->spi->irq);
 
-//	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, 0x3FF7FFFEUL);
-
-	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &status);
-
-	dev_dbg(printdev(lp), "SYS MASK:0x%x\n", status);
-
-	return DW1000_SUCCESS;
-//	return 0;
+	return dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, mode);
 }
 
 
@@ -2673,6 +2877,7 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	if (config & DW1000_LOADUCODE) {
 		_dw1000_load_ucode_from_rom(lp);
 		lp->pdata.sleep_mode |= AON_WCFG_ONW_LLDE; // microcode must be loaded at wake-up
+		dev_info(printdev(lp), "Microcode is loaded\n");
 	} else {
 		// Should disable the LDERUN enable bit in 0x36, 0x4
 		u16 rega;
@@ -2811,10 +3016,11 @@ static int dw1000_probe(struct spi_device *spi)
 
 	_dw1000_set_spi_high(spi);
 
-	/* Read irq status register to reset irq line */
-//	rc = dw1000_read_subreg(lp, RG_IRQ_STATUS, 0xff, 0, &status);
-//	if (rc)
-//		goto free_dev;
+	/* Configure GPIOs to show TX/RX activity. See NOTE 6 below. */
+	dw1000_set_lna_pa_mode(lp, 1, 1);
+
+	/* Configure LEDs management. See NOTE 6 below. */
+	dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
 
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
 			      IRQF_TRIGGER_HIGH,
