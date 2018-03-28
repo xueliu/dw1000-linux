@@ -346,21 +346,17 @@ const double txpwr_compensation[NUM_CH] = {
 
 // Structure to hold device data
 struct dw1000_data {
-       u32 partID;		/* IC Part ID - read during initialisation */
-       u32 lotID;       	/* IC Lot ID - read during initialisation */
-       u8 longFrames;   	/* Flag in non-standard long frame mode */
+       u32 part_id;		/* IC Part ID - read during initialisation */
+       u32 lot_id;       	/* IC Lot ID - read during initialisation */
+       u8 long_frame;   	/* Flag in non-standard long frame mode */
        u8 otprev;       	/* OTP revision number (read during initialisation) */
-       u32 txFCTRL;     	/* Keep TX_FCTRL register config */
+       u32 tx_fctrl_reg;     	/* Keep TX_FCTRL register config */
        u8 init_xtrim;   	/* initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed) */
-       u8 dblbuffon;    	/* Double RX buffer mode flag */
-       u32 sysCFGreg;   	/*/ Local copy of system config register */
+       u8 dbl_buff_on;    	/* Double RX buffer mode flag */
+       u32 sys_cfg_reg;   	/*/ Local copy of system config register */
        u16 sleep_mode;  	/* Used for automatic reloading of LDO tune and microcode at wake-up */
-       u8 wait4resp;    	/* wait4response was set with last TX start command */
-       struct dw1000_cb_data cbData;	/* Callback data structure */
-//      dwt_cb_t    cbTxDone;           // Callback for TX confirmation event
-//	dwt_cb_t    cbRxOk;             // Callback for RX good frame event
-//	dwt_cb_t    cbRxTo;             // Callback for RX timeout events
-//	dwt_cb_t    cbRxErr;            // Callback for RX error events
+       u8 wait_for_resp;    	/* wait4response was set with last TX start command */
+       struct dw1000_cb_data cb_data;	/* Callback data structure */
 };
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1382,14 +1378,14 @@ dw1000_irq_read_rx_buf_complete(void *context)
 	struct sk_buff *skb;
 	struct dw1000_local *lp = context;
 
-	u16 len = lp->pdata.cbData.datalength;
-	u32 status = lp->pdata.cbData.status;
+	u16 len = lp->pdata.cb_data.datalength;
+	u32 status = lp->pdata.cb_data.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// Report frame control - First bytes of the received frame.
 //	dwt_readfromdevice(RX_BUFFER_ID, 0, FCTRL_LEN_MAX, pdw1000local->cbData.fctrl);
-	memcpy(lp->pdata.cbData.fctrl, lp->rx_buf, FCTRL_LEN_MAX);
+	memcpy(lp->pdata.cb_data.fctrl, lp->rx_buf, FCTRL_LEN_MAX);
 
 #ifdef DEBUG
 	print_hex_dump(KERN_INFO, "dw1000 rx: ", DUMP_PREFIX_OFFSET, 16, 1,
@@ -1415,15 +1411,15 @@ dw1000_irq_read_rx_buf_complete(void *context)
 	// acknowledgement (ACK frame is not actually sent though). If the AAT bit is set, check ACK request bit in frame control to confirm (this
 	// implementation works only for IEEE802.15.4-2011 compliant frames).
 	// This issue is not documented at the time of writing this code. It should be in next release of DW1000 User Manual (v2.09, from July 2016).
-	if ((status & SYS_STATUS_AAT) && ((lp->pdata.cbData.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
+	if ((status & SYS_STATUS_AAT) && ((lp->pdata.cb_data.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
 		/* Clear AAT status bit in register */
 //		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_AAT);
 		lp->reg_val = SYS_STATUS_AAT;
 		dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, NULL);
 
 		/* Clear AAT status bit in callback data register copy */
-		lp->pdata.cbData.status &= ~SYS_STATUS_AAT;
-		lp->pdata.wait4resp = 0;
+		lp->pdata.cb_data.status &= ~SYS_STATUS_AAT;
+		lp->pdata.wait_for_resp = 0;
 	}
 
 	/* Read diagnostics data. */
@@ -1439,13 +1435,13 @@ dw1000_read_rx_fifo_info_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
-	u16 *len = &lp->pdata.cbData.datalength;
+	u16 *len = &lp->pdata.cb_data.datalength;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// Report frame length - Standard frame length up to 127, extended frame length up to 1023 bytes
 //	lp->pdata.cbData.datalength &= RX_FINFO_RXFL_MASK_1023;
-	if (lp->pdata.longFrames == 0) {
+	if (lp->pdata.long_frame == 0) {
 		*len &= RX_FINFO_RXFLEN_MASK;
 	}
 //	pdw1000local->cbData.datalength = len;
@@ -1454,7 +1450,7 @@ dw1000_read_rx_fifo_info_complete(void *context)
 
 	// Report ranging bit
 	if (*len & RX_FINFO_RNG) {
-		lp->pdata.cbData.rx_flags |= DW1000_CB_DATA_RX_FLAG_RNG;
+		lp->pdata.cb_data.rx_flags |= DW1000_CB_DATA_RX_FLAG_RNG;
 	}
 
 	ret = dw1000_async_read_reg(lp, RX_BUFFER_ID, 0, *len, &lp->rx_buf, dw1000_irq_read_rx_buf_complete);
@@ -1470,13 +1466,13 @@ dw1000_clear_rx_status_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	lp->pdata.cbData.rx_flags = 0;
+	lp->pdata.cb_data.rx_flags = 0;
 
 	enable_irq(lp->spi->irq);
 
 	/* Read frame info - Only the first two bytes of the register are used here */
 //	finfo16 = dwt_read16bitoffsetreg(RX_FINFO_ID, RX_FINFO_OFFSET);
-	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cbData.datalength, dw1000_read_rx_fifo_info_complete);
+	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cb_data.datalength, dw1000_read_rx_fifo_info_complete);
 
 	if (ret)
 		dev_err(printdev(lp), "failed to read rx fifo info\n");
@@ -1514,7 +1510,7 @@ dw1000_clear_tx_status_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
-	u32 status = lp->pdata.cbData.status;
+	u32 status = lp->pdata.cb_data.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -1525,11 +1521,11 @@ dw1000_clear_tx_status_complete(void *context)
 	// we need to handle the IC issue which turns on the RX again in this situation (i.e. because it is wrongly applying the wait4resp after the
 	// ACK TX).
 	// See section "Transmit and automatically wait for response" in DW1000 User Manual
-	if ((status & SYS_STATUS_AAT) && lp->pdata.wait4resp) {
+	if ((status & SYS_STATUS_AAT) && lp->pdata.wait_for_resp) {
 
 //		dwt_forcetrxoff(); // Turn the RX off
 
-		lp->pdata.wait4resp = 0;
+		lp->pdata.wait_for_resp = 0;
 
 		/* Reset RX in case we were late and a frame was already being received */
 		/* Set RX reset */
@@ -1572,8 +1568,8 @@ dw1000_irq_read_status_complete(void *context)
 
 	struct dw1000_local *lp = context;
 
-	le32_to_cpus(&lp->pdata.cbData.status);
-	status = lp->pdata.cbData.status;
+	le32_to_cpus(&lp->pdata.cb_data.status);
+	status = lp->pdata.cb_data.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 	dev_dbg(printdev(lp), "SYS_STATUS: 0x%x\n", status);
@@ -1620,7 +1616,7 @@ dw1000_irq_read_status_complete(void *context)
 	/* Handle RX errors events */
 	if (status & SYS_STATUS_ALL_RX_ERR) {
 
-		lp->pdata.wait4resp = 0;
+		lp->pdata.wait_for_resp = 0;
 
 		/* Clear RX error event bits */
 		lp->reg_val = SYS_STATUS_ALL_RX_ERR;
@@ -1648,7 +1644,7 @@ dw1000_isr(int irq, void *data)
 	dev_err(printdev(lp), "%s\n", __func__);
 
 	/* Read status register low 32bits */
-	ret = dw1000_async_read_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->pdata.cbData.status, dw1000_irq_read_status_complete);
+	ret = dw1000_async_read_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->pdata.cb_data.status, dw1000_irq_read_status_complete);
 
 	if (ret) {
 		dev_dbg(printdev(lp), "failed to async spi read\n");
@@ -1687,7 +1683,7 @@ dw1000_write_tx_buff_complete(void *context)
 	len = len + 2;
 
 	/* Zero offset in TX buffer, no ranging. */
-	lp->reg_val = lp->pdata.txFCTRL | len | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
+	lp->reg_val = lp->pdata.tx_fctrl_reg | len | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -1802,7 +1798,7 @@ dw1000_enable_frame_filter(struct dw1000_local *lp, u16 enable)
 		sysconfig &= ~(SYS_CFG_FFE);
 	}
 
-	lp->pdata.sysCFGreg = sysconfig;
+	lp->pdata.sys_cfg_reg = sysconfig;
 	return dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, sysconfig);
 }
 
@@ -1835,8 +1831,8 @@ dw1000_enable_auto_ack(struct dw1000_local *lp, u8 response_delay_time)
 	}
 
 	/* Enable auto ACK */
-	lp->pdata.sysCFGreg |= SYS_CFG_AUTOACK;
-	return dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sysCFGreg);
+	lp->pdata.sys_cfg_reg |= SYS_CFG_AUTOACK;
+	return dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2040,7 +2036,7 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 //	decamutexoff(stat);
 	enable_irq(lp->spi->irq);
 
-	lp->pdata.wait4resp = 0;
+	lp->pdata.wait_for_resp = 0;
 
 } // end deviceforcetrxoff()
 
@@ -2134,7 +2130,7 @@ dw1000_stop(struct ieee802154_hw *hw)
 //	decamutexoff(stat);
 //	enable_irq(lp->spi->irq);
 
-	lp->pdata.wait4resp = 0;
+	lp->pdata.wait_for_resp = 0;
 }
 
 static int
@@ -2558,14 +2554,14 @@ static int dw1000_dev_data_show(struct seq_file *file, void *offset)
 {
 	struct dw1000_local *lp = file->private;
 
-	seq_printf(file, "IC Part ID:\t\t\t0x%x\n", lp->pdata.partID);
-	seq_printf(file, "IC Lot ID:\t\t\t0x%x\n", lp->pdata.lotID);
-	seq_printf(file, "Non-standard Long Frame Mode:\t%d\n", lp->pdata.longFrames);
+	seq_printf(file, "IC Part ID:\t\t\t0x%x\n", lp->pdata.part_id);
+	seq_printf(file, "IC Lot ID:\t\t\t0x%x\n", lp->pdata.lot_id);
+	seq_printf(file, "Non-standard Long Frame Mode:\t%d\n", lp->pdata.long_frame);
 	seq_printf(file, "OTP Revision Number:\t\t0x%x\n", lp->pdata.otprev);
-	seq_printf(file, "TX_FCTRL Reg:\t\t\t0x%x\n", lp->pdata.txFCTRL);
+	seq_printf(file, "TX_FCTRL Reg:\t\t\t0x%x\n", lp->pdata.tx_fctrl_reg);
 	seq_printf(file, "Initial XTAL Trim Value:\t%d\n", lp->pdata.init_xtrim);
-	seq_printf(file, "Double RX Buffer Mode:\t\t%d\n", lp->pdata.dblbuffon);
-	seq_printf(file, "System Config Reg:\t\t0x%x\n", lp->pdata.sysCFGreg);
+	seq_printf(file, "Double RX Buffer Mode:\t\t%d\n", lp->pdata.dbl_buff_on);
+	seq_printf(file, "System Config Reg:\t\t0x%x\n", lp->pdata.sys_cfg_reg);
 	seq_printf(file, "Sleep Mode:\t\t\t%d\n", lp->pdata.sleep_mode);
 	return 0;
 }
@@ -2652,18 +2648,18 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	// For 110 kbps we need a special setup
 	if (DW1000_BR_110K == config->dataRate) {
-		lp->pdata.sysCFGreg |= SYS_CFG_RXM110K;
+		lp->pdata.sys_cfg_reg |= SYS_CFG_RXM110K;
 		reg16 >>= 3; // lde_replicaCoeff must be divided by 8
 	} else {
-		lp->pdata.sysCFGreg &= (~SYS_CFG_RXM110K);
+		lp->pdata.sys_cfg_reg &= (~SYS_CFG_RXM110K);
 	}
 
-	lp->pdata.longFrames = config->phrMode;
+	lp->pdata.long_frame = config->phrMode;
 
-	lp->pdata.sysCFGreg &= ~SYS_CFG_PHR_MODE_11;
-	lp->pdata.sysCFGreg |= (SYS_CFG_PHR_MODE_11 & (config->phrMode << SYS_CFG_PHR_MODE_SHFT));
+	lp->pdata.sys_cfg_reg &= ~SYS_CFG_PHR_MODE_11;
+	lp->pdata.sys_cfg_reg |= (SYS_CFG_PHR_MODE_11 & (config->phrMode << SYS_CFG_PHR_MODE_SHFT));
 
-	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sysCFGreg);
+	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
 	// Set the lde_replicaCoeff
 	dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_REPC_OFFSET, reg16);
 
@@ -2733,11 +2729,11 @@ void dw1000_configure(struct dw1000_local *lp) {
 	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
 
 	// Set up TX Preamble Size, PRF and Data Rate
-	lp->pdata.txFCTRL = ((config->txPreambLength | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->dataRate << TX_FCTRL_TXBR_SHFT);
+	lp->pdata.tx_fctrl_reg = ((config->txPreambLength | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->dataRate << TX_FCTRL_TXBR_SHFT);
 
-	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.txFCTRL);
+	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.tx_fctrl_reg);
 
-	dw1000_write_32bit_reg(lp, TX_FCTRL_ID, 0, lp->pdata.txFCTRL);
+	dw1000_write_32bit_reg(lp, TX_FCTRL_ID, 0, lp->pdata.tx_fctrl_reg);
 
 	// The SFD transmit pattern is initialised by the DW1000 upon a user TX request, but (due to an IC issue) it is not done for an auto-ACK TX. The
 	// SYS_CTRL write below works around this issue, by simultaneously initiating and aborting a transmission, which correctly initialises the SFD
@@ -2818,8 +2814,8 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	lp->pdata.dblbuffon = 0; /* Double buffer mode off by default */
-	lp->pdata.wait4resp = 0;
+	lp->pdata.dbl_buff_on = 0; /* Double buffer mode off by default */
+	lp->pdata.wait_for_resp = 0;
 	lp->pdata.sleep_mode = 0;
 
 //	lp->pdata.cbTxDone = NULL;
@@ -2857,8 +2853,8 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	}
 
 	// Load Part and Lot ID from OTP
-	_dw1000_read_otp(lp, PARTID_ADDRESS, &lp->pdata.partID);
-	_dw1000_read_otp(lp, LOTID_ADDRESS, &lp->pdata.lotID);
+	_dw1000_read_otp(lp, PARTID_ADDRESS, &lp->pdata.part_id);
+	_dw1000_read_otp(lp, LOTID_ADDRESS, &lp->pdata.lot_id);
 
 	// XTAL trim value is set in OTP for DW1000 module and EVK/TREK boards but that might not be the case in a custom design
 	lp->pdata.init_xtrim = otp_addr & 0x1F;
@@ -2894,7 +2890,7 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 
 	// Read system register / store local copy
 	// Read sysconfig register
-	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sysCFGreg);
+	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sys_cfg_reg);
 
 	return DW1000_SUCCESS;
 }
