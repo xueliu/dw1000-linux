@@ -347,11 +347,11 @@ const double txpwr_compensation[NUM_CH] = {
 // Structure to hold device data
 struct dw1000_data {
        u32 part_id;		/* IC Part ID - read during initialisation */
-       u32 lot_id;       	/* IC Lot ID - read during initialisation */
-       u8 long_frame;   	/* Flag in non-standard long frame mode */
-       u8 otprev;       	/* OTP revision number (read during initialisation) */
-       u32 tx_fctrl_reg;     	/* Keep TX_FCTRL register config */
-       u8 init_xtrim;   	/* initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed) */
+       u32 lot_id;		/* IC Lot ID - read during initialisation */
+       u8 long_frame;		/* Flag in non-standard long frame mode */
+       u8 otprev;		/* OTP revision number (read during initialisation) */
+       u32 tx_fctrl_reg;	/* Keep TX_FCTRL register config */
+       u8 init_xtrim;		/* initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed) */
        u8 dbl_buff_on;    	/* Double RX buffer mode flag */
        u32 sys_cfg_reg;   	/*/ Local copy of system config register */
        u16 sleep_mode;  	/* Used for automatic reloading of LDO tune and microcode at wake-up */
@@ -366,16 +366,16 @@ struct dw1000_data {
  *
  */
 struct dw1000_config {
-	u8 chan;           //!< channel number {1, 2, 3, 4, 5, 7 }
-	u8 prf;            //!< Pulse Repetition Frequency {DWT_PRF_16M or DWT_PRF_64M}
-	u8 txPreambLength; //!< DWT_PLEN_64..DWT_PLEN_4096
-	u8 rxPAC;          //!< Acquisition Chunk Size (Relates to RX preamble length)
-	u8 txCode;         //!< TX preamble code
-	u8 rxCode;         //!< RX preamble code
-	u8 nsSFD;          //!< Boolean should we use non-standard SFD for better performance
-	u8 dataRate;       //!< Data Rate {DWT_BR_110K, DWT_BR_850K or DWT_BR_6M8}
-	u8 phrMode;        //!< PHR mode {0x0 - standard DWT_PHRMODE_STD, 0x3 - extended frames DWT_PHRMODE_EXT}
-	u16 sfdTO;         //!< SFD timeout value (in symbols)
+	u8 chan;		/* channel number {1, 2, 3, 4, 5, 7 } */
+	u8 prf;			/* Pulse Repetition Frequency {DWT_PRF_16M or DWT_PRF_64M} */
+	u8 tx_preamble_length;	/* TX preamble length DWT_PLEN_64..DWT_PLEN_4096 */
+	u8 rx_pac;		/* Acquisition Chunk Size (Relates to RX preamble length) */
+	u8 tx_code;		/* TX preamble code */
+	u8 rx_code;		/* RX preamble code */
+	u8 ns_sfd;		/* Boolean should we use non-standard SFD for better performance */
+	u8 data_rate;		/* Data Rate {DWT_BR_110K, DWT_BR_850K or DWT_BR_6M8} */
+	u8 phr_mode;		/* PHR mode {0x0 - standard DWT_PHRMODE_STD, 0x3 - extended frames DWT_PHRMODE_EXT} */
+	u16 sfd_timeout;	/* SFD timeout value (in symbols) */
 };
 
 struct dw1000_local {
@@ -2526,15 +2526,15 @@ static const struct file_operations dw1000_reg_fops = {
 static int dw1000_configs_show(struct seq_file *file, void *offset)
 {
 	struct dw1000_local *lp = file->private;
-	seq_printf(file, "Data Rate:\t\t\t%d\n", lp->config.dataRate);
-	seq_printf(file, "Use Non-standard SFD:\t\t%d\n", lp->config.nsSFD);
-	seq_printf(file, "PHR Mode:\t\t\t%d\n", lp->config.phrMode);
+	seq_printf(file, "Data Rate:\t\t\t%d\n", lp->config.data_rate);
+	seq_printf(file, "Use Non-standard SFD:\t\t%d\n", lp->config.ns_sfd);
+	seq_printf(file, "PHR Mode:\t\t\t%d\n", lp->config.phr_mode);
 	seq_printf(file, "Pulse Repetition Frequency:\t%d\n", lp->config.prf);
-	seq_printf(file, "RX Preamble Code:\t\t%d\n", lp->config.rxCode);
-	seq_printf(file, "RX Acquisition Chunk Size:\t%d\n", lp->config.rxPAC);
-	seq_printf(file, "SFD Timeout:\t\t\t%d\n", lp->config.sfdTO);
-	seq_printf(file, "TX Preamble Code:\t\t%d\n", lp->config.txCode);
-	seq_printf(file, "TX Preamble Length:\t\t%d\n", lp->config.txPreambLength);
+	seq_printf(file, "RX Preamble Code:\t\t%d\n", lp->config.rx_code);
+	seq_printf(file, "RX Acquisition Chunk Size:\t%d\n", lp->config.rx_pac);
+	seq_printf(file, "SFD Timeout:\t\t\t%d\n", lp->config.sfd_timeout);
+	seq_printf(file, "TX Preamble Code:\t\t%d\n", lp->config.tx_code);
+	seq_printf(file, "TX Preamble Length:\t\t%d\n", lp->config.tx_preamble_length);
 	return 0;
 }
 
@@ -2640,24 +2640,24 @@ void dw1000_configure(struct dw1000_local *lp) {
 	u8 useDWnsSFD = 0;
 	u8 chan = config->chan;
 	u32 regval;
-	u16 reg16 = lde_replicaCoeff[config->rxCode];
+	u16 reg16 = lde_replicaCoeff[config->rx_code];
 	u8 prfIndex = config->prf - DW1000_PRF_16M;
 	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// For 110 kbps we need a special setup
-	if (DW1000_BR_110K == config->dataRate) {
+	if (DW1000_BR_110K == config->data_rate) {
 		lp->pdata.sys_cfg_reg |= SYS_CFG_RXM110K;
 		reg16 >>= 3; // lde_replicaCoeff must be divided by 8
 	} else {
 		lp->pdata.sys_cfg_reg &= (~SYS_CFG_RXM110K);
 	}
 
-	lp->pdata.long_frame = config->phrMode;
+	lp->pdata.long_frame = config->phr_mode;
 
 	lp->pdata.sys_cfg_reg &= ~SYS_CFG_PHR_MODE_11;
-	lp->pdata.sys_cfg_reg |= (SYS_CFG_PHR_MODE_11 & (config->phrMode << SYS_CFG_PHR_MODE_SHFT));
+	lp->pdata.sys_cfg_reg |= (SYS_CFG_PHR_MODE_11 & (config->phr_mode << SYS_CFG_PHR_MODE_SHFT));
 
 	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
 	// Set the lde_replicaCoeff
@@ -2678,15 +2678,15 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	// Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings)
 	// DTUNE0
-	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, sftsh[config->dataRate][config->nsSFD]);
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, sftsh[config->data_rate][config->ns_sfd]);
 
 	// DTUNE1
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, dtune1[prfIndex]);
 
-	if (config->dataRate == DW1000_BR_110K) {
+	if (config->data_rate == DW1000_BR_110K) {
 		dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_110K);
 	} else {
-		if (config->txPreambLength == DW1000_PLEN_64) {
+		if (config->tx_preamble_length == DW1000_PLEN_64) {
 			dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_6M8_PRE64);
 			dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE4H_OFFSET, DRX_TUNE4H_PRE64);
 		} else {
@@ -2696,23 +2696,23 @@ void dw1000_configure(struct dw1000_local *lp) {
 	}
 
 	// DTUNE2
-	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, digital_bb_config[prfIndex][config->rxPAC]);
+	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, digital_bb_config[prfIndex][config->rx_pac]);
 
 	// DTUNE3 (SFD timeout)
 	// Don't allow 0 - SFD timeout will always be enabled
-	if (config->sfdTO == 0) {
-		config->sfdTO = DW1000_SFDTOC_DEF;
+	if (config->sfd_timeout == 0) {
+		config->sfd_timeout = DW1000_SFDTOC_DEF;
 	}
-	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfdTO);
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfd_timeout);
 
 	// Configure AGC parameters
 	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, agc_config.lo32);
 	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, agc_config.target[prfIndex]);
 
 	// Set (non-standard) user SFD for improved performance,
-	if (config->nsSFD) {
+	if (config->ns_sfd) {
 		// Write non standard (DW) SFD length
-		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->dataRate]);
+		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->data_rate]);
 		nsSfd_result = 3;
 		useDWnsSFD = 1;
 	}
@@ -2721,15 +2721,15 @@ void dw1000_configure(struct dw1000_local *lp) {
 		(CHAN_CTRL_RXFPRF_MASK & (config->prf << CHAN_CTRL_RXFPRF_SHIFT)) | // RX PRF
 		((CHAN_CTRL_TNSSFD | CHAN_CTRL_RNSSFD) & (nsSfd_result << CHAN_CTRL_TNSSFD_SHIFT)) | // nsSFD enable RX&TX
 		(CHAN_CTRL_DWSFD & (useDWnsSFD << CHAN_CTRL_DWSFD_SHIFT)) | // Use DW nsSFD
-		(CHAN_CTRL_TX_PCOD_MASK & (config->txCode << CHAN_CTRL_TX_PCOD_SHIFT)) | // TX Preamble Code
-		(CHAN_CTRL_RX_PCOD_MASK & (config->rxCode << CHAN_CTRL_RX_PCOD_SHIFT)); // RX Preamble Code
+		(CHAN_CTRL_TX_PCOD_MASK & (config->tx_code << CHAN_CTRL_TX_PCOD_SHIFT)) | // TX Preamble Code
+		(CHAN_CTRL_RX_PCOD_MASK & (config->rx_code << CHAN_CTRL_RX_PCOD_SHIFT)); // RX Preamble Code
 
 	dev_dbg(printdev(lp), "CHAN_CTRL:0x%x\n", regval);
 
 	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
 
 	// Set up TX Preamble Size, PRF and Data Rate
-	lp->pdata.tx_fctrl_reg = ((config->txPreambLength | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->dataRate << TX_FCTRL_TXBR_SHFT);
+	lp->pdata.tx_fctrl_reg = ((config->tx_preamble_length | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->data_rate << TX_FCTRL_TXBR_SHFT);
 
 	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.tx_fctrl_reg);
 
@@ -3029,14 +3029,14 @@ static int dw1000_probe(struct spi_device *spi)
 
 	lp->config.chan = 2;                            /* Channel number. */
 	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
-	lp->config.txPreambLength = DW1000_PLEN_1024;   /* Preamble length. Used in TX only. */
-	lp->config.rxPAC = DW1000_PAC32;                /* Preamble acquisition chunk size. Used in RX only. */
-	lp->config.txCode = 9;                          /* TX preamble code. Used in TX only. */
-	lp->config.rxCode = 9;                          /* RX preamble code. Used in RX only. */
-	lp->config.nsSFD = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
-	lp->config.dataRate = DW1000_BR_6M8;           /* Data rate. */
-	lp->config.phrMode = DW1000_PHRMODE_STD;        /* PHY header mode. */
-	lp->config.sfdTO = (1025 + 64 - 32);            /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+	lp->config.tx_preamble_length = DW1000_PLEN_1024;   /* Preamble length. Used in TX only. */
+	lp->config.rx_pac = DW1000_PAC32;                /* Preamble acquisition chunk size. Used in RX only. */
+	lp->config.tx_code = 9;                          /* TX preamble code. Used in TX only. */
+	lp->config.rx_code = 9;                          /* RX preamble code. Used in RX only. */
+	lp->config.ns_sfd = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
+	lp->config.data_rate = DW1000_BR_6M8;           /* Data rate. */
+	lp->config.phr_mode = DW1000_PHRMODE_STD;        /* PHY header mode. */
+	lp->config.sfd_timeout = (1025 + 64 - 32);            /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	dw1000_configure(lp);
 
