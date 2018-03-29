@@ -2503,9 +2503,9 @@ static int dw1000_reg_show(struct seq_file *file, void *offset) {
 
 
 	seq_printf(file, "SYS_STATUS:\t0x%x\n", sys_status);
-	seq_printf(file, "SYS_CFG_ID:\t0x%x\n", sys_cfg);
-	seq_printf(file, "SYS_CTRL_ID:\t0x%x\n", sys_ctrl);
-	seq_printf(file, "SYS_MASK_ID:\t0x%x\n", sys_mask);
+	seq_printf(file, "SYS_CFG:\t0x%x\n", sys_cfg);
+	seq_printf(file, "SYS_CTRL:\t0x%x\n", sys_ctrl);
+	seq_printf(file, "SYS_MASK:\t0x%x\n", sys_mask);
 
 	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, sys_status);
 
