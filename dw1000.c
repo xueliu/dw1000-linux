@@ -344,6 +344,111 @@ const double txpwr_compensation[NUM_CH] = {
 	0.0
 };
 
+typedef struct
+{
+    u8 channel ;
+    u8 prf ;
+    u8 datarate ;
+    u8 preambleCode ;
+    u8 preambleLength ;
+    u8 pacSize ;
+    u8 nsSFD ;
+    u16 sfdTO ;
+} chConfig_t ;
+
+
+//Configuration for DecaRanging Modes (8 default use cases selectable by the switch S1 on EVK)
+chConfig_t chConfig[8] ={
+	//mode 1 - S1: 7 off, 6 off, 5 off
+	{
+                        2,              // channel
+                        DW1000_PRF_16M,    // prf
+		DW1000_BR_110K,    // datarate
+                        3,             // preambleCode
+		DW1000_PLEN_1024,  // preambleLength
+		DW1000_PAC32,      // pacSize
+                        1,       // non-standard SFD
+                        (1025 + 64 - 32) //SFD timeout
+                    },
+                    //mode 2
+                    {
+                        2,              // channel
+		DW1000_PRF_16M,    // prf
+		DW1000_BR_6M8,    // datarate
+                        3,             // preambleCode
+		DW1000_PLEN_128,   // preambleLength
+		DW1000_PAC8,       // pacSize
+                        0,       // non-standard SFD
+                        (129 + 8 - 8) //SFD timeout
+                    },
+                    //mode 3
+                    {
+                        2,              // channel
+		DW1000_PRF_64M,    // prf
+		DW1000_BR_110K,    // datarate
+                        9,             // preambleCode
+		DW1000_PLEN_1024,  // preambleLength
+		DW1000_PAC32,      // pacSize
+                        1,       // non-standard SFD
+                        (1025 + 64 - 32) //SFD timeout
+                    },
+                    //mode 4
+                    {
+                        2,              // channel
+		DW1000_PRF_64M,    // prf
+		DW1000_BR_6M8,    // datarate
+                        9,             // preambleCode
+		DW1000_PLEN_128,   // preambleLength
+		DW1000_PAC8,       // pacSize
+                        0,       // non-standard SFD
+                        (129 + 8 - 8) //SFD timeout
+                    },
+                    //mode 5
+                    {
+                        5,              // channel
+		DW1000_PRF_16M,    // prf
+		DW1000_BR_110K,    // datarate
+                        3,             // preambleCode
+		DW1000_PLEN_1024,  // preambleLength
+		DW1000_PAC32,      // pacSize
+                        1,       // non-standard SFD
+                        (1025 + 64 - 32) //SFD timeout
+                    },
+                    //mode 6
+                    {
+                        5,              // channel
+		DW1000_PRF_16M,    // prf
+        DW1000_BR_6M8,    // datarate
+                        3,             // preambleCode
+        DW1000_PLEN_128,   // preambleLength
+        DW1000_PAC8,       // pacSize
+                        0,       // non-standard SFD
+                        (129 + 8 - 8) //SFD timeout
+                    },
+                    //mode 7
+                    {
+                        5,              // channel
+        DW1000_PRF_64M,    // prf
+        DW1000_BR_110K,    // datarate
+                        9,             // preambleCode
+        DW1000_PLEN_1024,  // preambleLength
+        DW1000_PAC32,      // pacSize
+                        1,       // non-standard SFD
+                        (1025 + 64 - 32) //SFD timeout
+                    },
+                    //mode 8
+                    {
+                        5,              // channel
+        DW1000_PRF_64M,    // prf
+        DW1000_BR_6M8,    // datarate
+                        9,             // preambleCode
+        DW1000_PLEN_128,   // preambleLength
+        DW1000_PAC8,       // pacSize
+                        0,       // non-standard SFD
+                        (129 + 8 - 8) //SFD timeout
+                    }
+};
+
 // Structure to hold device data
 struct dw1000_data {
        u32 part_id;		/* IC Part ID - read during initialisation */
@@ -419,17 +524,17 @@ struct dw1000_local {
 };
 
 /* DW1000 operational states */
-enum {
-	STATE_OFF	= 0x00,
-	STATE_WAKEUP	= 0x01,
-	STATE_INIT	= 0x02,
-	STATE_IDLE	= 0x03,
-	STATE_SLEEP	= 0x04,
-	STATE_DEEPSLEEP	= 0x05,
-	STATE_TX	= 0x06,
-	STATE_RX	= 0x07,
-	STATE_SNOOZE	= 0x08,
-};
+//enum {
+//    STATE_OFF   = 0x00,
+//    STATE_WAKEUP    = 0x01,
+//    STATE_INIT  = 0x02,
+//    STATE_IDLE  = 0x03,
+//    STATE_SLEEP = 0x04,
+//    STATE_DEEPSLEEP = 0x05,
+//    STATE_TX    = 0x06,
+//    STATE_RX    = 0x07,
+//    STATE_SNOOZE    = 0x08,
+//};
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn dw1000_async_read_reg() / dwt_readfromdevice
@@ -457,20 +562,7 @@ enum {
  */
 static int
 dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *data, void (*complete)(void *context)) {
-	/* Buffer to compose header in */
-//	u8 header[3] = { 0, 0, 0 };
-	/* Counter for length of header */
 	int   cnt = 0;
-//	int i;
-//	struct spi_message msg;
-//	struct spi_transfer header_xfer = {
-//		.tx_buf = header,
-//	};
-
-//	struct spi_transfer data_xfer = {
-//		.len = length,
-//		.rx_buf = data,
-//	};
 
 	lp->async_read_data_xfer.rx_buf = data;
 	lp->async_read_data_xfer.len = length;
@@ -500,15 +592,7 @@ dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, 
 
 	lp->async_read_header_xfer.len = cnt;
 
-//	for (i = 0; i < cnt; i++) {
-//		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
-//	}
-
 	lp->async_read_msg.complete = complete;
-
-//	spi_message_init(&msg);
-//	spi_message_add_tail(&header_xfer, &msg);
-//	spi_message_add_tail(&data_xfer, &msg);
 
 	return spi_async(lp->spi, &lp->async_read_msg);
 }
@@ -762,23 +846,10 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-//	int i;
-	// Buffer to compose header in
-//	u8 header[3] = { 0, 0, 0 };
-//	lp->reg_addr;
-//	struct spi_message *msg = lp->reg_msg;
-//	struct spi_transfer header_xfer = {
-//		.tx_buf = header,
-//	};
-
-	dev_dbg(printdev(lp), "data:0x%x\n", *(u32*)(data));
+//  dev_dbg(printdev(lp), "data:0x%x\n", *(u32*)(data));
 
 	lp->reg_val_xfer.len = length;
 	lp->reg_val_xfer.tx_buf = data;
-//	struct spi_transfer data_xfer = {
-//		.len = length,
-//		.tx_buf = data,
-//	};
 
 	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
 	// For index of 0, no sub-index is required
@@ -803,15 +874,7 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
 
 	lp->reg_addr_xfer.len = cnt;
 
-//	for (i = 0; i < cnt; i++) {
-//		dev_dbg(printdev(lp), "write addr[%d]:0x%x\n", i, header[i]);
-//	}
-
 	lp->reg_msg.complete = complete;
-
-//	spi_message_init(&msg);
-//	spi_message_add_tail(&header_xfer, &msg);
-//	spi_message_add_tail(&data_xfer, &msg);
 
 	return spi_async(lp->spi, &lp->reg_msg);
 }
@@ -2072,6 +2135,12 @@ dw1000_start(struct ieee802154_hw *hw)
 //		dw1000_sync_rx_buf_ptrs(lp);
 //	}
 
+	/* Configure frame filtering. Only data frames are enabled in this example. Frame filtering must be enabled for Auto ACK to work. */
+	dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN);
+
+	/* Activate auto-acknowledgement. Time is set to 0 so that the ACK is sent as soon as possible after reception of a frame. */
+	dw1000_enable_auto_ack(lp, 0);
+
 	dw1000_setinterrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
 
 	enable_irq(lp->spi->irq);
@@ -2495,19 +2564,21 @@ static int dw1000_reg_show(struct seq_file *file, void *offset) {
 	u32 sys_cfg;
 	u32 sys_ctrl;
 	u32 sys_mask;
+	u32 gpio_ctrl;
 
 	dw1000_read_32bit_reg(lp, SYS_STATUS_ID, 0, &sys_status);
 	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &sys_cfg);
 	dw1000_read_32bit_reg(lp, SYS_CTRL_ID, 0, &sys_ctrl);
 	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &sys_mask);
-
+	dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, 0, &gpio_ctrl);
 
 	seq_printf(file, "SYS_STATUS:\t0x%x\n", sys_status);
 	seq_printf(file, "SYS_CFG:\t0x%x\n", sys_cfg);
 	seq_printf(file, "SYS_CTRL:\t0x%x\n", sys_ctrl);
 	seq_printf(file, "SYS_MASK:\t0x%x\n", sys_mask);
+	seq_printf(file, "GPIO_CTRL:\t0x%x\n", gpio_ctrl);
 
-	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, sys_status);
+//	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, sys_status);
 
 	return 0;
 }
@@ -3012,10 +3083,10 @@ static int dw1000_probe(struct spi_device *spi)
 
 	_dw1000_set_spi_high(spi);
 
-	/* Configure GPIOs to show TX/RX activity. See NOTE 6 below. */
+	/* Configure GPIOs to show TX/RX activity */
 	dw1000_set_lna_pa_mode(lp, 1, 1);
 
-	/* Configure LEDs management. See NOTE 6 below. */
+	/* Configure LEDs management */
 	dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
 
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
@@ -3034,9 +3105,9 @@ static int dw1000_probe(struct spi_device *spi)
 	lp->config.tx_code = 9;                          /* TX preamble code. Used in TX only. */
 	lp->config.rx_code = 9;                          /* RX preamble code. Used in RX only. */
 	lp->config.ns_sfd = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
-	lp->config.data_rate = DW1000_BR_6M8;           /* Data rate. */
+	lp->config.data_rate = DW1000_BR_110K;           /* Data rate. */
 	lp->config.phr_mode = DW1000_PHRMODE_STD;        /* PHY header mode. */
-	lp->config.sfd_timeout = (1025 + 64 - 32);            /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+	lp->config.sfd_timeout = (1025 + 64 - 32);	/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	dw1000_configure(lp);
 
