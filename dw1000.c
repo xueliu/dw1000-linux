@@ -1435,14 +1435,24 @@ dw1000_awake(struct dw1000_local *lp)
 }
 
 static void
+dw1000_irq_enable_rx_complete(void *context) {
+
+    struct dw1000_local *lp = context;
+
+    dev_dbg(printdev(lp), "%s\n", __func__);
+
+    enable_irq(lp->spi->irq);
+}
+
+static void
 dw1000_irq_read_rx_buf_complete(void *context)
 {
-//	int ret;
+	int ret;
 	struct sk_buff *skb;
 	struct dw1000_local *lp = context;
 
 	u16 len = lp->pdata.cb_data.datalength;
-	u32 status = lp->pdata.cb_data.status;
+//  u32 status = lp->pdata.cb_data.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -1468,22 +1478,33 @@ dw1000_irq_read_rx_buf_complete(void *context)
 		return;
 
 	memcpy(skb_put(skb, len), lp->rx_buf, len);
-	ieee802154_rx_irqsafe(lp->hw, skb, 0);
+
+    ieee802154_rx_irqsafe(lp->hw, skb, 0);
+
+//  enable_irq(lp->spi->irq);
+
+    /* Enable rx */
+    lp->reg_val = SYS_CTRL_RXENAB;
+    ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
+    if (ret)
+        dev_err(printdev(lp), "failed to enable rx\n");
+
+
 
 	// Because of a previous frame not being received properly, AAT bit can be set upon the proper reception of a frame not requesting for
 	// acknowledgement (ACK frame is not actually sent though). If the AAT bit is set, check ACK request bit in frame control to confirm (this
 	// implementation works only for IEEE802.15.4-2011 compliant frames).
 	// This issue is not documented at the time of writing this code. It should be in next release of DW1000 User Manual (v2.09, from July 2016).
-	if ((status & SYS_STATUS_AAT) && ((lp->pdata.cb_data.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
+//  if ((status & SYS_STATUS_AAT) && ((lp->pdata.cb_data.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
 		/* Clear AAT status bit in register */
 //		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_AAT);
-		lp->reg_val = SYS_STATUS_AAT;
-		dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, NULL);
-
-		/* Clear AAT status bit in callback data register copy */
-		lp->pdata.cb_data.status &= ~SYS_STATUS_AAT;
-		lp->pdata.wait_for_resp = 0;
-	}
+//  	lp->reg_val = SYS_STATUS_AAT;
+//  	dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, NULL);
+//
+//  	/* Clear AAT status bit in callback data register copy */
+//  	lp->pdata.cb_data.status &= ~SYS_STATUS_AAT;
+//  	lp->pdata.wait_for_resp = 0;
+//  }
 
 	/* Read diagnostics data. */
 //	dwt_readdiagnostics(&rx_diag);
@@ -1531,10 +1552,7 @@ dw1000_clear_rx_status_complete(void *context)
 
 	lp->pdata.cb_data.rx_flags = 0;
 
-	enable_irq(lp->spi->irq);
-
 	/* Read frame info - Only the first two bytes of the register are used here */
-//	finfo16 = dwt_read16bitoffsetreg(RX_FINFO_ID, RX_FINFO_OFFSET);
 	ret = dw1000_async_read_16bit_reg(lp, RX_FINFO_ID, RX_FINFO_OFFSET, &lp->pdata.cb_data.datalength, dw1000_read_rx_fifo_info_complete);
 
 	if (ret)
@@ -1577,29 +1595,35 @@ dw1000_clear_tx_status_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	enable_irq(lp->spi->irq);
-
 	// In the case where this TXFRS interrupt is due to the automatic transmission of an ACK solicited by a response (with ACK request bit set)
 	// that we receive through using wait4resp to a previous TX (and assuming that the IRQ processing of that TX has already been handled), then
 	// we need to handle the IC issue which turns on the RX again in this situation (i.e. because it is wrongly applying the wait4resp after the
 	// ACK TX).
 	// See section "Transmit and automatically wait for response" in DW1000 User Manual
-	if ((status & SYS_STATUS_AAT) && lp->pdata.wait_for_resp) {
+//  if ((status & SYS_STATUS_AAT) && lp->pdata.wait_for_resp) {
 
 //		dwt_forcetrxoff(); // Turn the RX off
 
-		lp->pdata.wait_for_resp = 0;
-
-		/* Reset RX in case we were late and a frame was already being received */
-		/* Set RX reset */
-		lp->reg_val = PMSC_CTRL0_RESET_RX;
-		ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET,  (u8 *)&lp->reg_val, dw1000_set_rx_reset_complete);
-		if (ret)
-			dev_err(printdev(lp), "failed to set rx reset\n");
-	} else {
+//  	lp->pdata.wait_for_resp = 0;
+//
+//  	/* Reset RX in case we were late and a frame was already being received */
+//  	/* Set RX reset */
+//  	lp->reg_val = PMSC_CTRL0_RESET_RX;
+//  	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET,  (u8 *)&lp->reg_val, dw1000_set_rx_reset_complete);
+//  	if (ret)
+//  		dev_err(printdev(lp), "failed to set rx reset\n");
+//  } else {
 		lp->is_tx = 0;
 		ieee802154_xmit_complete(lp->hw, lp->tx_skb, false);
-	}
+
+//      enable_irq(lp->spi->irq);
+
+        /* Enable rx */
+        lp->reg_val = SYS_CTRL_RXENAB;
+        ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
+        if (ret)
+            dev_err(printdev(lp), "failed to enable rx\n");
+//  }
 }
 
 static void
@@ -1677,16 +1701,16 @@ dw1000_irq_read_status_complete(void *context)
 //	}
 
 	/* Handle RX errors events */
-	if (status & SYS_STATUS_ALL_RX_ERR) {
-
-		lp->pdata.wait_for_resp = 0;
-
-		/* Clear RX error event bits */
-		lp->reg_val = SYS_STATUS_ALL_RX_ERR;
-		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_rx_err_complete);
-		if (ret)
-			dev_err(printdev(lp), "failed to clear rx error event bits\n");
-	}
+//  if (status & SYS_STATUS_ALL_RX_ERR) {
+//
+//      lp->pdata.wait_for_resp = 0;
+//
+//      /* Clear RX error event bits */
+//      lp->reg_val = SYS_STATUS_ALL_RX_ERR;
+//      ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_rx_err_complete);
+//      if (ret)
+//          dev_err(printdev(lp), "failed to clear rx error event bits\n");
+//  }
 
 	/* Clear events */
 //	dev_dbg(printdev(lp), "clear not concerned events\n");
@@ -2125,9 +2149,10 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 static int
 dw1000_start(struct ieee802154_hw *hw)
 {
-	int mode = DW1000_START_RX_IMMEDIATE;
+//  int mode = DW1000_START_RX_IMMEDIATE;
+//  u16 mode = (u16)SYS_CTRL_RXENAB;
 
-	struct dw1000_local *lp = hw->priv;
+  struct dw1000_local *lp = hw->priv;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -2139,13 +2164,13 @@ dw1000_start(struct ieee802154_hw *hw)
 	dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN);
 
 	/* Activate auto-acknowledgement. Time is set to 0 so that the ACK is sent as soon as possible after reception of a frame. */
-	dw1000_enable_auto_ack(lp, 0);
+	//dw1000_enable_auto_ack(lp, 0);
 
-	dw1000_setinterrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
+    dw1000_setinterrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
 
 	enable_irq(lp->spi->irq);
 
-	return dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, mode);
+    return dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
 }
 
 
@@ -2580,6 +2605,8 @@ static int dw1000_reg_show(struct seq_file *file, void *offset) {
 
 //	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, sys_status);
 
+//  dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
+
 	return 0;
 }
 
@@ -2717,10 +2744,10 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	// For 110 kbps we need a special setup
+	// For 110 kbps we need a special setup */
 	if (DW1000_BR_110K == config->data_rate) {
 		lp->pdata.sys_cfg_reg |= SYS_CFG_RXM110K;
-		reg16 >>= 3; // lde_replicaCoeff must be divided by 8
+        reg16 >>= 3; // lde_replicaCoeff must be divided by 8 */
 	} else {
 		lp->pdata.sys_cfg_reg &= (~SYS_CFG_RXM110K);
 	}
@@ -2730,28 +2757,31 @@ void dw1000_configure(struct dw1000_local *lp) {
 	lp->pdata.sys_cfg_reg &= ~SYS_CFG_PHR_MODE_11;
 	lp->pdata.sys_cfg_reg |= (SYS_CFG_PHR_MODE_11 & (config->phr_mode << SYS_CFG_PHR_MODE_SHFT));
 
+    /* enable auto rx */
+//  lp->pdata.sys_cfg_reg |= SYS_CFG_RXAUTR;
+
 	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
-	// Set the lde_replicaCoeff
+    // Set the lde_replicaCoeff */
 	dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_REPC_OFFSET, reg16);
 
 	_dw1000_config_lde(lp, prfIndex);
 
-	// Configure PLL2/RF PLL block CFG/TUNE (for a given channel)
+    // Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
 	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, fs_pll_cfg[chan_idx[chan]]);
 	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, fs_pll_tune[chan_idx[chan]]);
 
-	// Configure RF RX blocks (for specified channel/bandwidth)
+    // Configure RF RX blocks (for specified channel/bandwidth) */
 	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, rx_config[bw]);
 
-	// Configure RF TX blocks (for specified channel and PRF)
-	// Configure RF TX control
+    // Configure RF TX blocks (for specified channel and PRF) */
+    // Configure RF TX control */
 	dw1000_write_32bit_reg(lp, RF_CONF_ID, RF_TXCTRL_OFFSET, tx_config[chan_idx[chan]]);
 
-	// Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings)
-	// DTUNE0
+    // Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings) */
+    // DTUNE0 */
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, sftsh[config->data_rate][config->ns_sfd]);
 
-	// DTUNE1
+    // DTUNE1 */
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, dtune1[prfIndex]);
 
 	if (config->data_rate == DW1000_BR_110K) {
@@ -2766,23 +2796,23 @@ void dw1000_configure(struct dw1000_local *lp) {
 		}
 	}
 
-	// DTUNE2
+    // DTUNE2 */
 	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, digital_bb_config[prfIndex][config->rx_pac]);
 
-	// DTUNE3 (SFD timeout)
+    // DTUNE3 (SFD timeout) */
 	// Don't allow 0 - SFD timeout will always be enabled
 	if (config->sfd_timeout == 0) {
 		config->sfd_timeout = DW1000_SFDTOC_DEF;
 	}
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfd_timeout);
 
-	// Configure AGC parameters
+    // Configure AGC parameters  */
 	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, agc_config.lo32);
 	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, agc_config.target[prfIndex]);
 
-	// Set (non-standard) user SFD for improved performance,
+    // Set (non-standard) user SFD for improved performance, */
 	if (config->ns_sfd) {
-		// Write non standard (DW) SFD length
+        // Write non standard (DW) SFD length */
 		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->data_rate]);
 		nsSfd_result = 3;
 		useDWnsSFD = 1;
@@ -2799,7 +2829,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
 
-	// Set up TX Preamble Size, PRF and Data Rate
+    // Set up TX Preamble Size, PRF and Data Rate  */
 	lp->pdata.tx_fctrl_reg = ((config->tx_preamble_length | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->data_rate << TX_FCTRL_TXBR_SHFT);
 
 	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.tx_fctrl_reg);
@@ -2827,11 +2857,11 @@ _dw1000_set_spi_low(struct spi_device *spi)
 {
 	dev_dbg(&spi->dev, "%s\n", __func__);
 
-	dev_dbg(&spi->dev, "current max_speed is %d MHz\n", spi->max_speed_hz);
+	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
 
 	spi->max_speed_hz = 3000000;
 
-	dev_dbg(&spi->dev, "low max_speed is %d MHz\n", spi->max_speed_hz);
+	dev_dbg(&spi->dev, "low max_speed is %d Hz\n", spi->max_speed_hz);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2848,11 +2878,11 @@ static void
 _dw1000_set_spi_high(struct spi_device *spi) {
 	dev_dbg(&spi->dev, "%s\n", __func__);
 
-	dev_dbg(&spi->dev, "current max_speed is %d MHz\n", spi->max_speed_hz);
+	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
 
 	spi->max_speed_hz = 20000000;
 
-	dev_dbg(&spi->dev, "high max_speed is %d MHz\n", spi->max_speed_hz);
+	dev_dbg(&spi->dev, "high max_speed is %d Hz\n", spi->max_speed_hz);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -3003,7 +3033,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 	chip = "dw1000";
 	lp->hw->flags |= IEEE802154_HW_LBT;
 	phy->supported.channels[4] = 0xbe;
-	phy->current_channel = 1;
+	phy->current_channel = 2;
 	phy->current_page = 4;
 	phy->symbol_duration = 25;
 	phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
@@ -3084,10 +3114,10 @@ static int dw1000_probe(struct spi_device *spi)
 	_dw1000_set_spi_high(spi);
 
 	/* Configure GPIOs to show TX/RX activity */
-	dw1000_set_lna_pa_mode(lp, 1, 1);
+//  dw1000_set_lna_pa_mode(lp, 1, 1);
 
 	/* Configure LEDs management */
-	dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
+//  dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
 
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
 			      IRQF_TRIGGER_HIGH,
@@ -3098,13 +3128,14 @@ static int dw1000_probe(struct spi_device *spi)
 	/* disable_irq by default and wait for starting hardware */
 	disable_irq(spi->irq);
 
+    /* default mode 3 */
 	lp->config.chan = 2;                            /* Channel number. */
 	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
 	lp->config.tx_preamble_length = DW1000_PLEN_1024;   /* Preamble length. Used in TX only. */
 	lp->config.rx_pac = DW1000_PAC32;                /* Preamble acquisition chunk size. Used in RX only. */
 	lp->config.tx_code = 9;                          /* TX preamble code. Used in TX only. */
 	lp->config.rx_code = 9;                          /* RX preamble code. Used in RX only. */
-	lp->config.ns_sfd = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
+	lp->config.ns_sfd = 1;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
 	lp->config.data_rate = DW1000_BR_110K;           /* Data rate. */
 	lp->config.phr_mode = DW1000_PHRMODE_STD;        /* PHY header mode. */
 	lp->config.sfd_timeout = (1025 + 64 - 32);	/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
