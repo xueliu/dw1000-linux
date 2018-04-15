@@ -14,7 +14,7 @@ clean:
 
 else
 	obj-m := dw1000.o
-	CFLAGS_dw1000.o := -DDEBUG
+#	CFLAGS_dw1000.o := -DDEBUG
 endif
 
 remote_install:
