@@ -1736,7 +1736,7 @@ dw1000_isr(int irq, void *data)
 
 	disable_irq_nosync(irq);
 
-	dev_err(printdev(lp), "%s\n", __func__);
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	/* Read status register low 32bits */
 	ret = dw1000_async_read_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->pdata.cb_data.status, dw1000_irq_read_status_complete);
