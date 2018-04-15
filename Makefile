@@ -19,3 +19,4 @@ endif
 
 remote_install:
 	scp dw1000.ko pi@raspberrypi.local:
+	scp dw1000.ko pi@raspberrypi2.local:
