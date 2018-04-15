@@ -1441,7 +1441,7 @@ dw1000_irq_enable_rx_complete(void *context) {
 
     dev_dbg(printdev(lp), "%s\n", __func__);
 
-    enable_irq(lp->spi->irq);
+//  enable_irq(lp->spi->irq);
 }
 
 static void
@@ -1550,6 +1550,8 @@ dw1000_clear_rx_status_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
+    enable_irq(lp->spi->irq);
+
 	lp->pdata.cb_data.rx_flags = 0;
 
 	/* Read frame info - Only the first two bytes of the register are used here */
@@ -1594,6 +1596,8 @@ dw1000_clear_tx_status_complete(void *context)
 	u32 status = lp->pdata.cb_data.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
+
+    enable_irq(lp->spi->irq);
 
 	// In the case where this TXFRS interrupt is due to the automatic transmission of an ACK solicited by a response (with ACK request bit set)
 	// that we receive through using wait4resp to a previous TX (and assuming that the IRQ processing of that TX has already been handled), then
@@ -1674,12 +1678,16 @@ dw1000_irq_read_status_complete(void *context)
 
 	/* Handle TX confirmation event */
 	if (status & SYS_STATUS_TXFRS) {
-		dev_dbg(printdev(lp), "TX is done\n");
-		/* Clear TX event bits */
-		lp->reg_val = SYS_STATUS_ALL_TX;
-		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_tx_status_complete);
-		if (ret)
-			dev_err(printdev(lp), "failed to clear TX event bits\n");
+        if (lp->is_tx) {
+            dev_dbg(printdev(lp), "TX is done\n");
+            /* Clear TX event bits */
+            lp->reg_val = SYS_STATUS_ALL_TX;
+            ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_tx_status_complete);
+            if (ret)
+                dev_err(printdev(lp), "failed to clear TX event bits\n");
+        } else {
+            dev_dbg(printdev(lp), "ACK is done\n");
+        }
 	}
 
 	// Handle frame reception/preamble detect timeout events
@@ -2758,7 +2766,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	lp->pdata.sys_cfg_reg |= (SYS_CFG_PHR_MODE_11 & (config->phr_mode << SYS_CFG_PHR_MODE_SHFT));
 
     /* enable auto rx */
-//  lp->pdata.sys_cfg_reg |= SYS_CFG_RXAUTR;
+    lp->pdata.sys_cfg_reg |= SYS_CFG_RXAUTR;
 
 	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
     // Set the lde_replicaCoeff */
@@ -2801,9 +2809,9 @@ void dw1000_configure(struct dw1000_local *lp) {
 
     // DTUNE3 (SFD timeout) */
 	// Don't allow 0 - SFD timeout will always be enabled
-	if (config->sfd_timeout == 0) {
-		config->sfd_timeout = DW1000_SFDTOC_DEF;
-	}
+    if (config->sfd_timeout == 0) {
+        config->sfd_timeout = DW1000_SFDTOC_DEF;
+    }
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfd_timeout);
 
     // Configure AGC parameters  */
@@ -3125,20 +3133,20 @@ static int dw1000_probe(struct spi_device *spi)
 	if (rc)
 		goto free_dev;
 
-	/* disable_irq by default and wait for starting hardware */
+	/* Disable_irq by default and wait for starting hardware */
 	disable_irq(spi->irq);
 
-    /* default mode 3 */
+    /* Default mode 2 */
 	lp->config.chan = 2;                            /* Channel number. */
 	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
-	lp->config.tx_preamble_length = DW1000_PLEN_1024;   /* Preamble length. Used in TX only. */
-	lp->config.rx_pac = DW1000_PAC32;                /* Preamble acquisition chunk size. Used in RX only. */
+	lp->config.tx_preamble_length = DW1000_PLEN_128;   /* Preamble length. Used in TX only. */
+	lp->config.rx_pac = DW1000_PAC8;                /* Preamble acquisition chunk size. Used in RX only. */
 	lp->config.tx_code = 9;                          /* TX preamble code. Used in TX only. */
 	lp->config.rx_code = 9;                          /* RX preamble code. Used in RX only. */
-	lp->config.ns_sfd = 1;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
-	lp->config.data_rate = DW1000_BR_110K;           /* Data rate. */
+	lp->config.ns_sfd = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
+	lp->config.data_rate = DW1000_BR_6M8;           /* Data rate. */
 	lp->config.phr_mode = DW1000_PHRMODE_STD;        /* PHY header mode. */
-	lp->config.sfd_timeout = (1025 + 64 - 32);	/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+    lp->config.sfd_timeout = (129 + 8 - 8);   /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	dw1000_configure(lp);
 
