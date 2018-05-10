@@ -220,7 +220,7 @@ const u32 tx_config[NUM_CH] =
 };
 
 //Frequency Synthesiser - PLL configuration
-const u32 fs_pll_cfg[NUM_CH] =
+const u32 FS_PLL_CFG[NUM_CH] =
 {
 	FS_PLLCFG_CH1,
 	FS_PLLCFG_CH2,
@@ -231,7 +231,7 @@ const u32 fs_pll_cfg[NUM_CH] =
 };
 
 //Frequency Synthesiser - PLL tuning
-const u8 fs_pll_tune[NUM_CH] =
+const u8 FS_PLL_TUNE[NUM_CH] =
 {
 	FS_PLLTUNE_CH1,
 	FS_PLLTUNE_CH2,
@@ -259,7 +259,7 @@ const struct agc_cfg_struct agc_config =
 	{ AGC_TUNE1_16M, AGC_TUNE1_64M }  //adc target
 };
 
-//DW1000 non-standard SFD length for 110k, 850k and 6.81M
+/* DW1000 non-standard SFD length for 110k, 850k and 6.81M */
 const u8 dw_ns_SFD_len[NUM_BR] =
 {
 	DW_NS_SFD_LEN_110K,
@@ -267,8 +267,8 @@ const u8 dw_ns_SFD_len[NUM_BR] =
 	DW_NS_SFD_LEN_6M8
 };
 
-// SFD Threshold
-const u16 sftsh[NUM_BR][NUM_SFD] =
+/* SFD Threshold */
+const u16 SFD_THRESHOLD[NUM_BR][NUM_SFD] =
 {
 	{
 		DRX_TUNE0b_110K_STD,
@@ -284,13 +284,13 @@ const u16 sftsh[NUM_BR][NUM_SFD] =
 	}
 };
 
-const u16 dtune1[NUM_PRF] =
+const u16 DTUNE1[NUM_PRF] =
 {
 	DRX_TUNE1a_PRF16,
 	DRX_TUNE1a_PRF64
 };
 
-const u32 digital_bb_config[NUM_PRF][NUM_PACS] =
+const u32 DIGITAL_BB_CONFIG[NUM_PRF][NUM_PACS] =
 {
 	{
 		DRX_TUNE2_PRF16_PAC8,
@@ -306,7 +306,7 @@ const u32 digital_bb_config[NUM_PRF][NUM_PACS] =
 	}
 };
 
-const u16 lde_replicaCoeff[PCODES] =
+const u16 LDE_REPLICA_COEFF[PCODES] =
 {
 	0, // No preamble code 0
 	LDE_REPC_PCODE_1,
@@ -335,7 +335,7 @@ const u16 lde_replicaCoeff[PCODES] =
 	LDE_REPC_PCODE_24
 };
 
-const double txpwr_compensation[NUM_CH] = {
+const double txpwr_compensation[NUM_CH] = { // TX_PWR_COMPENSATION
 	0.0,
 	0.035,
 	0.0,
@@ -2251,8 +2251,8 @@ dw1000_set_channel(struct ieee802154_hw *hw, u8 page, u8 channel)
 //	dev_dbg(printdev(lp), "channel index: %d\n", chan_idx[channel]);
 
 	// Configure PLL2/RF PLL block CFG/TUNE (for a given channel)
-	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, fs_pll_cfg[chan_idx[channel]]);
-	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, fs_pll_tune[chan_idx[channel]]);
+    dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, FS_PLL_CFG[chan_idx[channel]]);
+    dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, FS_PLL_TUNE[chan_idx[channel]]);
 
 	// Configure RF RX blocks (for specified channel/bandwidth)
 	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, rx_config[bandwidth]);
@@ -2744,7 +2744,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	u8 useDWnsSFD = 0;
 	u8 chan = config->chan;
 	u32 regval;
-	u16 reg16 = lde_replicaCoeff[config->rx_code];
+    u16 reg16 = LDE_REPLICA_COEFF[config->rx_code];
 	u8 prfIndex = config->prf - DW1000_PRF_16M;
 	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
 
@@ -2767,28 +2767,28 @@ void dw1000_configure(struct dw1000_local *lp) {
     lp->pdata.sys_cfg_reg |= SYS_CFG_RXAUTR;
 
 	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
-    // Set the lde_replicaCoeff */
+    /* Set the lde_replicaCoeff */
 	dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_REPC_OFFSET, reg16);
 
 	_dw1000_config_lde(lp, prfIndex);
 
-    // Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
-	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, fs_pll_cfg[chan_idx[chan]]);
-	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, fs_pll_tune[chan_idx[chan]]);
+    /* Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
+    dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, FS_PLL_CFG[chan_idx[chan]]);
+    dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, FS_PLL_TUNE[chan_idx[chan]]);
 
-    // Configure RF RX blocks (for specified channel/bandwidth) */
+    /* Configure RF RX blocks (for specified channel/bandwidth) */
 	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, rx_config[bw]);
 
-    // Configure RF TX blocks (for specified channel and PRF) */
-    // Configure RF TX control */
+    /* Configure RF TX blocks (for specified channel and PRF) */
+    /* Configure RF TX control */
 	dw1000_write_32bit_reg(lp, RF_CONF_ID, RF_TXCTRL_OFFSET, tx_config[chan_idx[chan]]);
 
-    // Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings) */
-    // DTUNE0 */
-	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, sftsh[config->data_rate][config->ns_sfd]);
+    /* Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings) */
+    /* DTUNE0 */
+    dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, SFD_THRESHOLD[config->data_rate][config->ns_sfd]);
 
-    // DTUNE1 */
-	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, dtune1[prfIndex]);
+    /* DTUNE1 */
+    dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, DTUNE1[prfIndex]);
 
 	if (config->data_rate == DW1000_BR_110K) {
 		dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_110K);
@@ -2802,21 +2802,21 @@ void dw1000_configure(struct dw1000_local *lp) {
 		}
 	}
 
-    // DTUNE2 */
-	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, digital_bb_config[prfIndex][config->rx_pac]);
+    /* DTUNE2 */
+    dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, DIGITAL_BB_CONFIG[prfIndex][config->rx_pac]);
 
-    // DTUNE3 (SFD timeout) */
-	// Don't allow 0 - SFD timeout will always be enabled
+    /* DTUNE3 (SFD timeout) */
+	/* Don't allow 0 - SFD timeout will always be enabled */
     if (config->sfd_timeout == 0) {
         config->sfd_timeout = DW1000_SFDTOC_DEF;
     }
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfd_timeout);
 
-    // Configure AGC parameters  */
+    /* Configure AGC parameters  */
 	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, agc_config.lo32);
 	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, agc_config.target[prfIndex]);
 
-    // Set (non-standard) user SFD for improved performance, */
+    /* Set (non-standard) user SFD for improved performance */
 	if (config->ns_sfd) {
         // Write non standard (DW) SFD length */
 		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->data_rate]);
@@ -2835,7 +2835,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
 
-    // Set up TX Preamble Size, PRF and Data Rate  */
+    /* Set up TX Preamble Size, PRF and Data Rate  */
 	lp->pdata.tx_fctrl_reg = ((config->tx_preamble_length | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->data_rate << TX_FCTRL_TXBR_SHFT);
 
 	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.tx_fctrl_reg);
