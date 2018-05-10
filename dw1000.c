@@ -126,14 +126,14 @@
 #define DW1000_LEDS_ENABLE      0x01
 #define DW1000_LEDS_INIT_BLINK  0x02
 
-//frame filtering configuration options
-#define DW1000_FF_NOTYPE_EN	0x000	// no frame types allowed (FF disabled)
-#define DW1000_FF_COORD_EN	0x002	// behave as coordinator (can receive frames with no dest address (PAN ID has to match))
-#define DW1000_FF_BEACON_EN	0x004	// beacon frames allowed
-#define DW1000_FF_DATA_EN	0x008	// data frames allowed
-#define DW1000_FF_ACK_EN	0x010	// ack frames allowed
-#define DW1000_FF_MAC_EN	0x020	// mac control frames allowed
-#define DW1000_FF_RSVD_EN	0x040	// reserved frame types allowed
+/* frame filtering configuration options */
+#define DW1000_FF_NOTYPE_EN	0x000	/* no frame types allowed (FF disabled) */
+#define DW1000_FF_COORD_EN	0x002	/* behave as coordinator (can receive frames with no dest address (PAN ID has to match)) */
+#define DW1000_FF_BEACON_EN	0x004	/* beacon frames allowed */
+#define DW1000_FF_DATA_EN	0x008	/* data frames allowed */
+#define DW1000_FF_ACK_EN	0x010	/* ack frames allowed */
+#define DW1000_FF_MAC_EN	0x020	/* mac control frames allowed */
+#define DW1000_FF_RSVD_EN	0x040	/* reserved frame types allowed */
 
 //DW1000 interrupt events
 #define DW1000_INT_TFRS            0x00000080          // frame sent
@@ -2168,8 +2168,8 @@ dw1000_start(struct ieee802154_hw *hw)
 //		dw1000_sync_rx_buf_ptrs(lp);
 //	}
 
-	/* Configure frame filtering. Only data frames are enabled in this example. Frame filtering must be enabled for Auto ACK to work. */
-	dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN);
+	/* Configure frame filtering. Frame filtering must be enabled for Auto ACK to work. */
+    dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN);
 
 	/* Activate auto-acknowledgement. Time is set to 0 so that the ACK is sent as soon as possible after reception of a frame. */
 	//dw1000_enable_auto_ack(lp, 0);
@@ -2307,15 +2307,13 @@ dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
 		dw1000_write_reg(lp, EUI_64_ID, EUI_64_OFFSET, EUI_64_LEN, addr);
 	}
 
-//	if (changed & IEEE802154_AFILT_PANC_CHANGED) {
-//		if (filt->pan_coord) {
-//			regmap_update_bits(lp->regmap_dar, DAR_PHY_CTRL4,
-//					   DAR_PHY_CTRL4_PANCORDNTR0, 0x10);
-//		} else {
-//			regmap_update_bits(lp->regmap_dar, DAR_PHY_CTRL4,
-//					   DAR_PHY_CTRL4_PANCORDNTR0, 0x00);
-//		}
-//	}
+    if (changed & IEEE802154_AFILT_PANC_CHANGED) {
+        if (filt->pan_coord) {
+            dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN | DW1000_FF_COORD_EN);
+        } else {
+            dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN);
+        }
+    }
 
 	return 0;
 }
