@@ -61,79 +61,82 @@
 #define FCTRL_LEN_MAX 2
 
 /* OTP addresses definitions */
-#define LDOTUNE_ADDRESS (0x04)
-#define PARTID_ADDRESS (0x06)
-#define LOTID_ADDRESS  (0x07)
-#define VBAT_ADDRESS   (0x08)
-#define VTEMP_ADDRESS  (0x09)
-#define XTRIM_ADDRESS  (0x1E)
+#define LDOTUNE_ADDRESS	(0x04)
+#define PARTID_ADDRESS	(0x06)
+#define LOTID_ADDRESS	(0x07)
+#define VBAT_ADDRESS	(0x08)
+#define VTEMP_ADDRESS	(0x09)
+#define XTRIM_ADDRESS	(0x1E)
 
-#define DW1000_SUCCESS (0)
-#define DW1000_ERROR   (-1)
+#define DW1000_SUCCESS	(0)
+#define DW1000_ERROR	(-1)
 
-#define DW1000_TIME_UNITS          (1.0/499.2e6/128.0) //!< = 15.65e-12 s */
+#define DW1000_TIME_UNITS	(1.0/499.2e6/128.0) /* = 15.65e-12 s */
 
-#define DW1000_DEVICE_ID   (0xDECA0130)        //!< DW1000 MP device ID */
+#define DW1000_DEVICE_ID	(0xDECA0130) /* DW1000 MP device ID */
 
 /* constants for selecting the bit rate for data TX (and RX) */
 /* These are defined for write (with just a shift) the TX_FCTRL register */
-#define DW1000_BR_110K     0   /* UWB bit rate 110 kbits/s */
-#define DW1000_BR_850K     1   /* UWB bit rate 850 kbits/s */
-#define DW1000_BR_6M8      2   /* UWB bit rate 6.8 Mbits/s */
+#define DW1000_BR_110K	0 /* UWB bit rate 110 kbits/s */
+#define DW1000_BR_850K	1 /* UWB bit rate 850 kbits/s */
+#define DW1000_BR_6M8	2 /* UWB bit rate 6.8 Mbits/s */
 
 /* constants for specifying the (Nominal) mean Pulse Repetition Frequency */
 /* These are defined for direct write (with a shift if necessary) to CHAN_CTRL and TX_FCTRL regs */
-#define DW1000_PRF_16M     1   /* UWB PRF 16 MHz */
-#define DW1000_PRF_64M     2   /* UWB PRF 64 MHz */
+#define DW1000_PRF_16M	1 /* UWB PRF 16 MHz */
+#define DW1000_PRF_64M	2 /* UWB PRF 64 MHz */
 
 /* constants for specifying Preamble Acquisition Chunk (PAC) Size in symbols */
-#define DW1000_PAC8        0   /* PAC  8 (recommended for RX of preamble length  128 and below */
-#define DW1000_PAC16       1   /* PAC 16 (recommended for RX of preamble length  256 */
-#define DW1000_PAC32       2   /* PAC 32 (recommended for RX of preamble length  512 */
-#define DW1000_PAC64       3   /* PAC 64 (recommended for RX of preamble length 1024 and up */
+#define DW1000_PAC8	0 /* PAC  8 (recommended for RX of preamble length  128 and below */
+#define DW1000_PAC16	1 /* PAC 16 (recommended for RX of preamble length  256 */
+#define DW1000_PAC32	2 /* PAC 32 (recommended for RX of preamble length  512 */
+#define DW1000_PAC64	3 /* PAC 64 (recommended for RX of preamble length 1024 and up */
 
 /* constants for specifying TX Preamble length in symbols */
 /* These are defined to allow them be directly written into byte 2 of the TX_FCTRL register */
 /* (i.e. a four bit value destined for bits 20..18 but shifted left by 2 for byte alignment) */
-#define DW1000_PLEN_4096   0x0C    /* Standard preamble length 4096 symbols */
-#define DW1000_PLEN_2048   0x28    /* Non-standard preamble length 2048 symbols */
-#define DW1000_PLEN_1536   0x18    /* Non-standard preamble length 1536 symbols */
-#define DW1000_PLEN_1024   0x08    /* Standard preamble length 1024 symbols */
-#define DW1000_PLEN_512    0x34    /* Non-standard preamble length 512 symbols */
-#define DW1000_PLEN_256    0x24    /* Non-standard preamble length 256 symbols */
-#define DW1000_PLEN_128    0x14    /* Non-standard preamble length 128 symbols */
-#define DW1000_PLEN_64     0x04    /* Standard preamble length 64 symbols */
+#define DW1000_PLEN_4096	0x0C /* Standard preamble length 4096 symbols */
+#define DW1000_PLEN_2048	0x28 /* Non-standard preamble length 2048 symbols */
+#define DW1000_PLEN_1536	0x18 /* Non-standard preamble length 1536 symbols */
+#define DW1000_PLEN_1024	0x08 /* Standard preamble length 1024 symbols */
+#define DW1000_PLEN_512		0x34 /* Non-standard preamble length 512 symbols */
+#define DW1000_PLEN_256		0x24 /* Non-standard preamble length 256 symbols */
+#define DW1000_PLEN_128		0x14 /* Non-standard preamble length 128 symbols */
+#define DW1000_PLEN_64		0x04 /* Standard preamble length 64 symbols */
 
-#define DW1000_SFDTOC_DEF	0x1041  /* default SFD timeout value */
+#define DW1000_SFDTOC_DEF	0x1041 /* default SFD timeout value */
 
-#define DW1000_PHRMODE_STD	0x0     /* standard PHR mode */
-#define DW1000_PHRMODE_EXT	0x3     /* DW proprietary extended frames PHR mode */
+#define DW1000_PHRMODE_STD	0x0 /* standard PHR mode */
+#define DW1000_PHRMODE_EXT	0x3 /* DW proprietary extended frames PHR mode */
 
-// Defined constants for "mode" bitmask parameter passed into dwt_starttx() function. */
-#define DW1000_START_TX_IMMEDIATE      0
-#define DW1000_START_TX_DELAYED        1
-#define DW1000_RESPONSE_EXPECTED       2
+/* Defined constants for "mode" bitmask parameter passed into dwt_starttx() function. */
+#define DW1000_START_TX_IMMEDIATE	0
+#define DW1000_START_TX_DELAYED		1
+#define DW1000_RESPONSE_EXPECTED	2
 
 #define DW1000_START_RX_IMMEDIATE  0
-#define DW1000_START_RX_DELAYED    1    // Set up delayed RX, if "late" error triggers, then the RX will be enabled immediately */
-#define DW1000_IDLE_ON_DLY_ERR     2    // If delayed RX failed due to "late" error then if this */
-// flag is set the RX will not be re-enabled immediately, and device will be in IDLE when function exits */
-#define DW1000_NO_SYNC_PTRS        4    // Do not try to sync IC side and Host side buffer pointers when enabling RX. This is used to perform manual RX */
-// re-enabling when receiving a frame in double buffer mode.
+#define DW1000_START_RX_DELAYED    1    /* Set up delayed RX, if "late" error triggers, then the RX will be enabled immediately */
+#define DW1000_IDLE_ON_DLY_ERR     2    /* If delayed RX failed due to "late" error then if this */
+/* flag is set the RX will not be re-enabled immediately, and device will be in IDLE when function exits */
+#define DW1000_NO_SYNC_PTRS        4    /* Do not try to sync IC side and Host side buffer pointers when enabling RX. This is used to perform manual RX */
+/* re-enabling when receiving a frame in double buffer mode.  */
 
-// Defined constants for "mode" bit field parameter passed to dwt_setleds() function.
-#define DW1000_LEDS_DISABLE     0x00
-#define DW1000_LEDS_ENABLE      0x01
-#define DW1000_LEDS_INIT_BLINK  0x02
+/* Defined constants for "mode" bit field parameter passed to dwt_setleds() function. */
+#define DW1000_LEDS_DISABLE	0x00
+#define DW1000_LEDS_ENABLE	0x01
+#define DW1000_LEDS_INIT_BLINK	0x02
 
 /* frame filtering configuration options */
-#define DW1000_FF_NOTYPE_EN	0x000	/* no frame types allowed (FF disabled) */
-#define DW1000_FF_COORD_EN	0x002	/* behave as coordinator (can receive frames with no dest address (PAN ID has to match)) */
-#define DW1000_FF_BEACON_EN	0x004	/* beacon frames allowed */
-#define DW1000_FF_DATA_EN	0x008	/* data frames allowed */
-#define DW1000_FF_ACK_EN	0x010	/* ack frames allowed */
-#define DW1000_FF_MAC_EN	0x020	/* mac control frames allowed */
-#define DW1000_FF_RSVD_EN	0x040	/* reserved frame types allowed */
+#define DW1000_FF_NOTYPE_EN	0x000 /* no frame types allowed (FF disabled) */
+#define DW1000_FF_COORD_EN	0x002 /* behave as coordinator (can receive frames with no dest address (PAN ID has to match)) */
+#define DW1000_FF_BEACON_EN	0x004 /* beacon frames allowed */
+#define DW1000_FF_DATA_EN	0x008 /* data frames allowed */
+#define DW1000_FF_ACK_EN	0x010 /* ack frames allowed */
+#define DW1000_FF_MAC_EN	0x020 /* mac control frames allowed */
+#define DW1000_FF_RSVD_EN	0x040 /* reserved frame types allowed */
+#define DW1000_FF_NORMAL	DW1000_FF_BEACON_EN | DW1000_FF_BEACON_EN | DW1000_FF_DATA_EN | DW1000_FF_ACK_EN | DW1000_FF_MAC_EN
+#define DW1000_FF_COORD		DW1000_FF_NORMAL | DW1000_FF_COORD_EN
+#define DW1000_FF_ALL		DW1000_FF_COORD | DW1000_FF_RSVD_EN
 
 /* DW1000 interrupt events */
 #define DW1000_INT_TFRS		0x00000080 /* frame sent */
@@ -156,23 +159,23 @@
 #define DW1000_RX_EN		0x0002 /* ONW_RX - on wakeup activate reception */
 #define DW1000_TANDV		0x0001 /* ONW_RADC - on wakeup run ADC to sample temperature and voltage sensor values */
 
-#define DW1000_XTAL_EN      0x10 /* keep XTAL running during sleep */
-#define DW1000_WAKE_SLPCNT  0x8 /* wake up after sleep count */
-#define DW1000_WAKE_CS      0x4 /* wake up on chip select */
-#define DW1000_WAKE_WK      0x2 /* wake up on WAKEUP PIN */
-#define DW1000_SLP_EN       0x1 /* enable sleep/deep sleep functionality */
+#define DW1000_XTAL_EN		0x10 /* keep XTAL running during sleep */
+#define DW1000_WAKE_SLPCNT	0x8 /* wake up after sleep count */
+#define DW1000_WAKE_CS		0x4 /* wake up on chip select */
+#define DW1000_WAKE_WK		0x2 /* wake up on WAKEUP PIN */
+#define DW1000_SLP_EN		0x1 /* enable sleep/deep sleep functionality */
 
 /* DW1000 INIT configuration parameters */
-#define DW1000_LOADUCODE     0x1
-#define DW1000_LOADNONE      0x0
+#define DW1000_LOADUCODE	0x1
+#define DW1000_LOADNONE		0x0
 
 /* DW1000 OTP operating parameter set selection */
-#define DW1000_OPSET_64LEN   0x0
-#define DW1000_OPSET_TIGHT   0x1
-#define DW1000_OPSET_DEFLT   0x2
+#define DW1000_OPSET_64LEN	0x0
+#define DW1000_OPSET_TIGHT	0x1
+#define DW1000_OPSET_DEFLT	0x2
 
 /* Call-back data RX frames flags */
-#define DW1000_CB_DATA_RX_FLAG_RNG 0x1 // Ranging bit */
+#define DW1000_CB_DATA_RX_FLAG_RNG 0x1 /* Ranging bit */
 
 /* TX/RX call-back data */
 struct dw1000_cb_data{
@@ -346,14 +349,14 @@ const double txpwr_compensation[NUM_CH] = { // TX_PWR_COMPENSATION
 
 typedef struct
 {
-    u8 channel ;
-    u8 prf ;
-    u8 datarate ;
-    u8 preambleCode ;
-    u8 preambleLength ;
-    u8 pacSize ;
-    u8 nsSFD ;
-    u16 sfdTO ;
+	u8 channel ;
+	u8 prf ;
+	u8 datarate ;
+	u8 preambleCode ;
+	u8 preambleLength ;
+	u8 pacSize ;
+	u8 nsSFD ;
+	u16 sfdTO ;
 } chConfig_t ;
 
 
@@ -451,17 +454,17 @@ chConfig_t chConfig[8] ={
 
 // Structure to hold device data
 struct dw1000_data {
-       u32 part_id;		/* IC Part ID - read during initialisation */
-       u32 lot_id;		/* IC Lot ID - read during initialisation */
-       u8 long_frame;		/* Flag in non-standard long frame mode */
-       u8 otprev;		/* OTP revision number (read during initialisation) */
-       u32 tx_fctrl_reg;	/* Keep TX_FCTRL register config */
-       u8 init_xtrim;		/* initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed) */
-       u8 dbl_buff_on;    	/* Double RX buffer mode flag */
-       u32 sys_cfg_reg;   	/* Local copy of system config register */
-       u16 sleep_mode;  	/* Used for automatic reloading of LDO tune and microcode at wake-up */
-       u8 wait_for_resp;    	/* wait4response was set with last TX start command */
-       struct dw1000_cb_data cb_data;	/* Callback data structure */
+	u32 part_id; /* IC Part ID - read during initialisation */
+	u32 lot_id; /* IC Lot ID - read during initialisation */
+	u8 long_frame; /* Flag in non-standard long frame mode */
+	u8 otprev; /* OTP revision number (read during initialisation) */
+	u32 tx_fctrl_reg; /* Keep TX_FCTRL register config */
+	u8 init_xtrim; /* initial XTAL trim value read from OTP (or defaulted to mid-range if OTP not programmed) */
+	u8 dbl_buff_on; /* Double RX buffer mode flag */
+	u32 sys_cfg_reg; /* Local copy of system config register */
+	u16 sleep_mode; /* Used for automatic reloading of LDO tune and microcode at wake-up */
+	u8 wait_for_resp; /* wait4response was set with last TX start command */
+	struct dw1000_cb_data cb_data; /* Callback data structure */
 };
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1144,7 +1147,6 @@ void _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
 		break;
 	}
 
-
 	// Need to write lower byte separately before setting the higher byte(s)
 	dw1000_write_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, 1, &reg[0]);
 	dw1000_write_reg(lp, PMSC_ID, 0x1, 1, &reg[1]);
@@ -1341,7 +1343,6 @@ _dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
 	wr_buf[0] = 0x00;
 	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
 
-	///////////////////////////////////////////
 	// PROGRAM MR
 	// Set SLOW, MODE_SEL
 	wr_buf[0] = 0x01;
@@ -1478,15 +1479,15 @@ dw1000_irq_read_rx_buf_complete(void *context)
 
 	memcpy(skb_put(skb, len), lp->rx_buf, len);
 
-    ieee802154_rx_irqsafe(lp->hw, skb, 0);
+	ieee802154_rx_irqsafe(lp->hw, skb, 0);
 
 //  enable_irq(lp->spi->irq);
 
-    /* Enable rx */
-    lp->reg_val = SYS_CTRL_RXENAB;
-    ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
-    if (ret)
-        dev_err(printdev(lp), "failed to enable rx\n");
+	/* Enable rx */
+	lp->reg_val = SYS_CTRL_RXENAB;
+	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
+	if (ret)
+		dev_err(printdev(lp), "failed to enable rx\n");
 
 
 
@@ -1549,7 +1550,7 @@ dw1000_clear_rx_status_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-    enable_irq(lp->spi->irq);
+	enable_irq(lp->spi->irq);
 
 	lp->pdata.cb_data.rx_flags = 0;
 
@@ -1596,7 +1597,7 @@ dw1000_clear_tx_status_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-    enable_irq(lp->spi->irq);
+	enable_irq(lp->spi->irq);
 
 	// In the case where this TXFRS interrupt is due to the automatic transmission of an ACK solicited by a response (with ACK request bit set)
 	// that we receive through using wait4resp to a previous TX (and assuming that the IRQ processing of that TX has already been handled), then
@@ -1616,16 +1617,16 @@ dw1000_clear_tx_status_complete(void *context)
 //  	if (ret)
 //  		dev_err(printdev(lp), "failed to set rx reset\n");
 //  } else {
-		lp->is_tx = 0;
-		ieee802154_xmit_complete(lp->hw, lp->tx_skb, false);
+	lp->is_tx = 0;
+	ieee802154_xmit_complete(lp->hw, lp->tx_skb, false);
 
 //      enable_irq(lp->spi->irq);
 
-        /* Enable rx */
-        lp->reg_val = SYS_CTRL_RXENAB;
-        ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
-        if (ret)
-            dev_err(printdev(lp), "failed to enable rx\n");
+	/* Enable rx */
+	lp->reg_val = SYS_CTRL_RXENAB;
+	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
+	if (ret)
+		dev_err(printdev(lp), "failed to enable rx\n");
 //  }
 }
 
@@ -2168,7 +2169,7 @@ dw1000_start(struct ieee802154_hw *hw)
 //	}
 
 	/* Configure frame filtering. Frame filtering must be enabled for Auto ACK to work. */
-    dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN);
+    dw1000_enable_frame_filter(lp, DW1000_FF_NORMAL);
 
 	/* Activate auto-acknowledgement. Time is set to 0 so that the ACK is sent as soon as possible after reception of a frame. */
 	//dw1000_enable_auto_ack(lp, 0);
@@ -2310,9 +2311,9 @@ dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
 
 	if (changed & IEEE802154_AFILT_PANC_CHANGED) {
 		if (filt->pan_coord) {
-			dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN | DW1000_FF_COORD_EN);
+			dw1000_enable_frame_filter(lp, DW1000_FF_COORD);
 		} else {
-			dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN);
+			dw1000_enable_frame_filter(lp, DW1000_FF_NORMAL);
 		}
 	}
 
