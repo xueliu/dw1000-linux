@@ -2334,26 +2334,6 @@ dw1000_set_txpower(struct ieee802154_hw *hw, s32 mbm)
 }
 
 static int
-dw1000_set_lbt(struct ieee802154_hw *hw, bool on)
-{
-
-	return 0;
-}
-
-static int
-dw1000_set_cca_mode(struct ieee802154_hw *hw,
-		       const struct wpan_phy_cca *cca)
-{
-	return 0;
-}
-
-static int
-dw1000_set_cca_ed_level(struct ieee802154_hw *hw, s32 mbm)
-{
-	return 0;
-}
-
-static int
 dw1000_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
 {
 	struct dw1000_local *lp = hw->priv;
@@ -2389,9 +2369,6 @@ static const struct ieee802154_ops dw1000_ops = {
 	.stop = dw1000_stop,
 	.set_hw_addr_filt = dw1000_set_hw_addr_filt,
 	.set_txpower = dw1000_set_txpower,
-	.set_lbt = dw1000_set_lbt,
-	.set_cca_mode = dw1000_set_cca_mode,
-	.set_cca_ed_level = dw1000_set_cca_ed_level,
 	.set_promiscuous_mode = dw1000_set_promiscuous_mode,
 };
 
