@@ -68,9 +68,6 @@
 #define VTEMP_ADDRESS	(0x09)
 #define XTRIM_ADDRESS	(0x1E)
 
-#define DW1000_SUCCESS	(0)
-#define DW1000_ERROR	(-1)
-
 #define DW1000_TIME_UNITS	(1.0/499.2e6/128.0) /* = 15.65e-12 s */
 
 #define DW1000_DEVICE_ID	(0xDECA0130) /* DW1000 MP device ID */
@@ -1166,7 +1163,7 @@ _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
  * no return value
  */
 static int
-dw1000_get_eui(struct dw1000_local *lp, u8 *eui64)
+dw1000_get_eui(struct dw1000_local *lp, __le64 *eui64)
 {
 	return dw1000_write_reg(lp, EUI_64_ID, 0x0, 8, eui64);
 }
@@ -1303,7 +1300,8 @@ _dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
 		mrb = 0x0003;
 		break;
 	default :
-		return DW1000_ERROR;
+		// TODO: return error
+		return false;
 	}
 
 	wr_buf[0] = mra & 0x00ff;
@@ -1406,7 +1404,7 @@ _dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
 		dw1000_read_reg(lp, OTP_IF_ID, OTP_STAT, 1, rd_buf);
 	}
 
-	return DW1000_SUCCESS;
+	return 0;
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1611,7 +1609,7 @@ dw1000_clear_tx_status_complete(void *context)
 {
 	int ret;
 	struct dw1000_local *lp = context;
-	u32 status = lp->pdata.cb_data.status;
+//	u32 status = lp->pdata.cb_data.status;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -2762,7 +2760,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	u8 useDWnsSFD = 0;
 	u8 chan = config->chan;
 	u32 regval;
-    u16 reg16 = LDE_REPLICA_COEFF[config->rx_code];
+	u16 reg16 = LDE_REPLICA_COEFF[config->rx_code];
 	u8 prfIndex = config->prf - DW1000_PRF_16M;
 	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
 
@@ -2771,7 +2769,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	// For 110 kbps we need a special setup */
 	if (DW1000_BR_110K == config->data_rate) {
 		lp->pdata.sys_cfg_reg |= SYS_CFG_RXM110K;
-        reg16 >>= 3; // lde_replicaCoeff must be divided by 8 */
+		reg16 >>= 3; // lde_replicaCoeff must be divided by 8 */
 	} else {
 		lp->pdata.sys_cfg_reg &= (~SYS_CFG_RXM110K);
 	}
@@ -2781,32 +2779,32 @@ void dw1000_configure(struct dw1000_local *lp) {
 	lp->pdata.sys_cfg_reg &= ~SYS_CFG_PHR_MODE_11;
 	lp->pdata.sys_cfg_reg |= (SYS_CFG_PHR_MODE_11 & (config->phr_mode << SYS_CFG_PHR_MODE_SHFT));
 
-    /* enable auto rx */
-    lp->pdata.sys_cfg_reg |= SYS_CFG_RXAUTR;
+	/* Enable auto rx */
+	lp->pdata.sys_cfg_reg |= SYS_CFG_RXAUTR;
 
 	dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
-    /* Set the lde_replicaCoeff */
+	/* Set the lde_replicaCoeff */
 	dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_REPC_OFFSET, reg16);
 
 	_dw1000_config_lde(lp, prfIndex);
 
-    /* Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
-    dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, FS_PLL_CFG[CHAN_IDX[chan]]);
-    dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, FS_PLL_TUNE[CHAN_IDX[chan]]);
+	/* Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
+	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, FS_PLL_CFG[CHAN_IDX[chan]]);
+	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, FS_PLL_TUNE[CHAN_IDX[chan]]);
 
-    /* Configure RF RX blocks (for specified channel/bandwidth) */
+	/* Configure RF RX blocks (for specified channel/bandwidth) */
 	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, RX_CONFIG[bw]);
 
-    /* Configure RF TX blocks (for specified channel and PRF) */
-    /* Configure RF TX control */
+	/* Configure RF TX blocks (for specified channel and PRF) */
+	/* Configure RF TX control */
 	dw1000_write_32bit_reg(lp, RF_CONF_ID, RF_TXCTRL_OFFSET, TX_CONFIG[CHAN_IDX[chan]]);
 
-    /* Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings) */
-    /* DTUNE0 */
-    dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, SFD_THRESHOLD[config->data_rate][config->ns_sfd]);
+	/* Configure the baseband parameters (for specified PRF, bit rate, PAC, and SFD settings) */
+	/* DTUNE0 */
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, SFD_THRESHOLD[config->data_rate][config->ns_sfd]);
 
-    /* DTUNE1 */
-    dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, DTUNE1[prfIndex]);
+	/* DTUNE1 */
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, DTUNE1[prfIndex]);
 
 	if (config->data_rate == DW1000_BR_110K) {
 		dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_110K);
@@ -2820,23 +2818,23 @@ void dw1000_configure(struct dw1000_local *lp) {
 		}
 	}
 
-    /* DTUNE2 */
-    dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, DIGITAL_BB_CONFIG[prfIndex][config->rx_pac]);
+	/* DTUNE2 */
+	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, DIGITAL_BB_CONFIG[prfIndex][config->rx_pac]);
 
-    /* DTUNE3 (SFD timeout) */
-	/* Don't allow 0 - SFD timeout will always be enabled */
-    if (config->sfd_timeout == 0) {
-        config->sfd_timeout = DW1000_SFDTOC_DEF;
-    }
+	/* DTUNE3 (SFD timeout) */
+	/* NOTE: Don't allow 0 - SFD timeout will always be enabled */
+	if (config->sfd_timeout == 0) {
+		config->sfd_timeout = DW1000_SFDTOC_DEF;
+	}
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfd_timeout);
 
-    /* Configure AGC parameters  */
+	/* Configure AGC parameters  */
 	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, agc_config.lo32);
 	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, agc_config.target[prfIndex]);
 
-    /* Set (non-standard) user SFD for improved performance */
+	/* Set (non-standard) user SFD for improved performance */
 	if (config->ns_sfd) {
-        // Write non standard (DW) SFD length */
+		// Write non standard (DW) SFD length */
 		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->data_rate]);
 		nsSfd_result = 3;
 		useDWnsSFD = 1;
@@ -2853,7 +2851,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
 
-    /* Set up TX Preamble Size, PRF and Data Rate  */
+	/* Set up TX Preamble Size, PRF and Data Rate  */
 	lp->pdata.tx_fctrl_reg = ((config->tx_preamble_length | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->data_rate << TX_FCTRL_TXBR_SHFT);
 
 	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->pdata.tx_fctrl_reg);
@@ -2943,11 +2941,6 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	lp->pdata.wait_for_resp = 0;
 	lp->pdata.sleep_mode = 0;
 
-//	lp->pdata.cbTxDone = NULL;
-//	lp->pdata.cbRxOk = NULL;
-//	lp->pdata.cbRxTo = NULL;
-//	lp->pdata.cbRxErr = NULL;
-
 	/* Make sure the device is completely reset before starting initialisation */
 	dw1000_soft_reset(lp);
 
@@ -2963,13 +2956,14 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	_dw1000_read_otp(lp, XTRIM_ADDRESS, (u32*) &otp_addr);
 	otp_addr = otp_addr & 0xffff;
 
-	// OTP revision is next byte
+	/* Get OTP revision */
 	lp->pdata.otprev = (otp_addr >> 8) & 0xff;
+	dev_info(printdev(lp), "OTP Rev: 0x%x", lp->pdata.otprev);
 
 	// Load LDO tune from OTP and kick it if there is a value actually programmed.
 	_dw1000_read_otp(lp, LDOTUNE_ADDRESS, &ldo_tune);
 	if ((ldo_tune & 0xFF) != 0) {
-		dev_info(printdev(lp), "the device has been calibrated\n");
+		dev_info(printdev(lp), "The device has been calibrated\n");
 		// Kick LDO tune
 		// Set load LDE kick bit
 		dw1000_write_8bit_reg(lp, OTP_IF_ID, OTP_SF, OTP_SF_LDO_KICK);
@@ -3017,7 +3011,7 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	// Read sysconfig register
 	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sys_cfg_reg);
 
-	return DW1000_SUCCESS;
+	return 0;
 }
 
 static int
@@ -3079,7 +3073,6 @@ static int dw1000_probe(struct spi_device *spi)
 {
 	struct ieee802154_hw *hw;
 	struct dw1000_local *lp;
-//	unsigned int status;
 	struct gpio_desc *rstn;
 	int rc;
 
@@ -3112,8 +3105,6 @@ static int dw1000_probe(struct spi_device *spi)
 	lp->hw = hw;
 	lp->spi = spi;
 	hw->parent = &spi->dev;
-	// TODO: Read from OTP ?
-	ieee802154_random_extended_addr(&hw->phy->perm_extended_addr);
 
 	lp->buf = devm_kzalloc(&spi->dev, SPI_COMMAND_BUFFER, GFP_KERNEL);
 	if (!lp->buf)
@@ -3134,13 +3125,22 @@ static int dw1000_probe(struct spi_device *spi)
 	if (rc)
 		goto free_dev;
 
+	/* try to read predefined EUI from register */
+	dw1000_get_eui(lp, &hw->phy->perm_extended_addr);
+	if (ieee802154_is_valid_extended_unicast_addr(hw->phy->perm_extended_addr)) {
+		dev_info(&spi->dev, "OTP EUI: 0x%llx\n", hw->phy->perm_extended_addr);
+	} else {
+		ieee802154_random_extended_addr(&hw->phy->perm_extended_addr);
+		dev_info(&spi->dev, "OTP EUI not found"); 
+	}
+
 	_dw1000_set_spi_high(spi);
 
 	/* Configure GPIOs to show TX/RX activity */
-//  dw1000_set_lna_pa_mode(lp, 1, 1);
+	//  dw1000_set_lna_pa_mode(lp, 1, 1);
 
 	/* Configure LEDs management */
-//  dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
+	//  dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
 
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
 			      IRQF_TRIGGER_HIGH,
