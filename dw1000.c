@@ -2289,6 +2289,7 @@ dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
 		u16 addr = le16_to_cpu(filt->short_addr);
 		/* Short address into low 16 bits */
 		dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_SHORT_ADDR_OFFSET, addr);
+		lp->config.short_addr = addr;
 	}
 
 	if (changed & IEEE802154_AFILT_PANID_CHANGED) {
@@ -2296,6 +2297,7 @@ dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
 
 		/* PAN ID is high 16 bits of register */
 		dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_PAN_ID_OFFSET, pan);
+		lp->config.pan_id = pan;
 	}
 
 	if (changed & IEEE802154_AFILT_IEEEADDR_CHANGED) {
@@ -2306,13 +2308,13 @@ dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
 		dw1000_write_reg(lp, EUI_64_ID, EUI_64_OFFSET, EUI_64_LEN, addr);
 	}
 
-    if (changed & IEEE802154_AFILT_PANC_CHANGED) {
-        if (filt->pan_coord) {
-            dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN | DW1000_FF_COORD_EN);
-        } else {
-            dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN);
-        }
-    }
+	if (changed & IEEE802154_AFILT_PANC_CHANGED) {
+		if (filt->pan_coord) {
+			dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN | DW1000_FF_COORD_EN);
+		} else {
+			dw1000_enable_frame_filter(lp, DW1000_FF_DATA_EN | DW1000_FF_BEACON_EN | DW1000_FF_MAC_EN | DW1000_FF_ACK_EN);
+		}
+	}
 
 	return 0;
 }
@@ -2354,6 +2356,27 @@ dw1000_set_cca_ed_level(struct ieee802154_hw *hw, s32 mbm)
 static int
 dw1000_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
 {
+	struct dw1000_local *lp = hw->priv;
+	int ret;
+	dev_dbg(printdev(lp), "%s(%d)\n", __func__, on);
+
+	if(on) {
+		ret = dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_SHORT_ADDR_OFFSET, 0xffff);
+		if (ret < 0)
+			return ret;
+		ret = dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_PAN_ID_OFFSET, 0xffff);
+		if (ret < 0)
+			return ret;
+		// TODO: Disable all frame filter
+	} else {
+		ret = dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_SHORT_ADDR_OFFSET, lp->config.short_addr);
+		if (ret < 0)
+			return ret;
+		ret = dw1000_write_16bit_reg(lp, PANADR_ID, PANADR_PAN_ID_OFFSET, lp->config.pan_id);
+		if (ret < 0)
+			return ret;
+	}
+
 	return 0;
 }
 
