@@ -1102,7 +1102,8 @@ dw1000_write_32bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 data)
  *
  * no return value
  */
-void _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
+static void
+_dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
 {
 	u8 reg[2];
 
@@ -1150,7 +1151,24 @@ void _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
 	// Need to write lower byte separately before setting the higher byte(s)
 	dw1000_write_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, 1, &reg[0]);
 	dw1000_write_reg(lp, PMSC_ID, 0x1, 1, &reg[1]);
+}
 
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_get_eui() / dwt_geteui()
+ *
+ *  @brief This is used to get the EUI 64-bit from the DW1000
+ *
+ * input parameters
+ * @param eui64 - this is the pointer to a buffer that will contain the read 64-bit EUI value
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static int
+dw1000_get_eui(struct dw1000_local *lp, u8 *eui64)
+{
+	return dw1000_write_reg(lp, EUI_64_ID, 0x0, 8, eui64);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1931,7 +1949,7 @@ dw1000_enable_auto_ack(struct dw1000_local *lp, u8 response_delay_time)
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
- * @fn dw1000_setinterrupt / dwt_setinterrupt()
+ * @fn dw1000_set_interrupt / dwt_setinterrupt()
  *
  * @brief This function enables the specified events to trigger an interrupt.
  * The following events can be enabled:
@@ -1955,7 +1973,7 @@ dw1000_enable_auto_ack(struct dw1000_local *lp, u8 response_delay_time)
  * no return value
  */
 static int
-dw1000_setinterrupt(struct dw1000_local *lp, u32 bitmask, u8 enable) {
+dw1000_set_interrupt(struct dw1000_local *lp, u32 bitmask, u8 enable) {
 
 	int ret;
 //	decaIrqStatus_t stat;
@@ -2174,7 +2192,7 @@ dw1000_start(struct ieee802154_hw *hw)
 	/* Activate auto-acknowledgement. Time is set to 0 so that the ACK is sent as soon as possible after reception of a frame. */
 	//dw1000_enable_auto_ack(lp, 0);
 
-    dw1000_setinterrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
+    dw1000_set_interrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
 
 	enable_irq(lp->spi->irq);
 
@@ -3026,30 +3044,30 @@ dw1000_detect_device(struct dw1000_local *lp)
 		IEEE802154_HW_AFILT |
 			IEEE802154_HW_PROMISCUOUS;
 
-	phy->flags = WPAN_PHY_FLAG_TXPOWER |
-			     WPAN_PHY_FLAG_CCA_ED_LEVEL |
-			     WPAN_PHY_FLAG_CCA_MODE;
+//	phy->flags = WPAN_PHY_FLAG_TXPOWER |
+//			     WPAN_PHY_FLAG_CCA_ED_LEVEL |
+//			     WPAN_PHY_FLAG_CCA_MODE;
 
-	phy->supported.cca_modes = BIT(NL802154_CCA_ENERGY) |
-		BIT(NL802154_CCA_CARRIER) | BIT(NL802154_CCA_ENERGY_CARRIER);
-	phy->supported.cca_opts = BIT(NL802154_CCA_OPT_ENERGY_CARRIER_AND) |
-		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
+//	phy->supported.cca_modes = BIT(NL802154_CCA_ENERGY) |
+//		BIT(NL802154_CCA_CARRIER) | BIT(NL802154_CCA_ENERGY_CARRIER);
+//	phy->supported.cca_opts = BIT(NL802154_CCA_OPT_ENERGY_CARRIER_AND) |
+//		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
 
-	phy->cca.mode = NL802154_CCA_ENERGY;
+//	phy->cca.mode = NL802154_CCA_ENERGY;
 	chip = "dw1000";
-	lp->hw->flags |= IEEE802154_HW_LBT;
+//	lp->hw->flags |= IEEE802154_HW_LBT;
 	phy->supported.channels[4] = 0xbe;
 	phy->current_channel = 2;
 	phy->current_page = 4;
 	phy->symbol_duration = 25;
-	phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
-	phy->supported.tx_powers = dw1000_powers;
-	phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
-	phy->supported.cca_ed_levels = dw1000_ed_levels;
-	phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
+//	phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
+//	phy->supported.tx_powers = dw1000_powers;
+//	phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
+//	phy->supported.cca_ed_levels = dw1000_ed_levels;
+//	phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
 
-	phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
-	phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
+//	phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
+//	phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
 
 not_supp:
 	dev_info(&lp->spi->dev, "Detected %s chip id 0x%x\n", chip, dev_id);
@@ -3093,12 +3111,11 @@ static int dw1000_probe(struct spi_device *spi)
 	lp = hw->priv;
 	lp->hw = hw;
 	lp->spi = spi;
-//	lp->slp_tr = slp_tr;
 	hw->parent = &spi->dev;
+	// TODO: Read from OTP ?
 	ieee802154_random_extended_addr(&hw->phy->perm_extended_addr);
 
-	lp->buf = devm_kzalloc(&spi->dev,
-				 SPI_COMMAND_BUFFER, GFP_KERNEL);
+	lp->buf = devm_kzalloc(&spi->dev, SPI_COMMAND_BUFFER, GFP_KERNEL);
 	if (!lp->buf)
 		return -ENOMEM;
 
@@ -3134,17 +3151,17 @@ static int dw1000_probe(struct spi_device *spi)
 	/* Disable_irq by default and wait for starting hardware */
 	disable_irq(spi->irq);
 
-    /* Default mode 2 */
-	lp->config.chan = 2;                            /* Channel number. */
-	lp->config.prf = DW1000_PRF_64M;                /* Pulse repetition frequency. */
-	lp->config.tx_preamble_length = DW1000_PLEN_128;   /* Preamble length. Used in TX only. */
-	lp->config.rx_pac = DW1000_PAC8;                /* Preamble acquisition chunk size. Used in RX only. */
-	lp->config.tx_code = 9;                          /* TX preamble code. Used in TX only. */
-	lp->config.rx_code = 9;                          /* RX preamble code. Used in RX only. */
-	lp->config.ns_sfd = 0;                           /* 0 to use standard SFD, 1 to use non-standard SFD. */
-	lp->config.data_rate = DW1000_BR_6M8;           /* Data rate. */
-	lp->config.phr_mode = DW1000_PHRMODE_STD;        /* PHY header mode. */
-    lp->config.sfd_timeout = (129 + 8 - 8);   /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+	/* Default mode 2 */
+	lp->config.chan = 2; 					/* Channel number. */
+	lp->config.prf = DW1000_PRF_64M;			/* Pulse repetition frequency. */
+	lp->config.tx_preamble_length = DW1000_PLEN_128;	/* Preamble length. Used in TX only. */
+	lp->config.rx_pac = DW1000_PAC8;			/* Preamble acquisition chunk size. Used in RX only. */
+	lp->config.tx_code = 9;					/* TX preamble code. Used in TX only. */
+	lp->config.rx_code = 9;					/* RX preamble code. Used in RX only. */
+	lp->config.ns_sfd = 0;					/* 0 to use standard SFD, 1 to use non-standard SFD. */
+	lp->config.data_rate = DW1000_BR_6M8;			/* Data rate. */
+	lp->config.phr_mode = DW1000_PHRMODE_STD;		/* PHY header mode. */
+	lp->config.sfd_timeout = (129 + 8 - 8);			/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	dw1000_configure(lp);
 
