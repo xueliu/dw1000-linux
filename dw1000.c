@@ -2491,10 +2491,11 @@ void dw1000_configure(struct dw1000_local *lp) {
 	u8 ns_sfd_result  = 0;
 	u8 use_dw_ns_sfd = 0;
 	u8 chan = config->chan;
-	u32 reg_val;
+	u32 reg_val = 0;
 	u16 reg16 = LDE_REPLICA_COEFF[config->rx_code];
 	u8 prf_index = config->prf - DW1000_PRF_16M;
-	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
+	/* Select wide or narrow band */
+	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -2571,13 +2572,21 @@ void dw1000_configure(struct dw1000_local *lp) {
 		ns_sfd_result = 3;
 		use_dw_ns_sfd = 1;
 	}
-	reg_val =  (CHAN_CTRL_TX_CHAN_MASK & (chan << CHAN_CTRL_TX_CHAN_SHIFT)) | // Transmit Channel
-		(CHAN_CTRL_RX_CHAN_MASK & (chan << CHAN_CTRL_RX_CHAN_SHIFT)) | // Receive Channel
-		(CHAN_CTRL_RXFPRF_MASK & (config->prf << CHAN_CTRL_RXFPRF_SHIFT)) | // RX PRF
-		((CHAN_CTRL_TNSSFD | CHAN_CTRL_RNSSFD) & (ns_sfd_result << CHAN_CTRL_TNSSFD_SHIFT)) | // nsSFD enable RX&TX
-		(CHAN_CTRL_DWSFD & (use_dw_ns_sfd << CHAN_CTRL_DWSFD_SHIFT)) | // Use DW nsSFD
-		(CHAN_CTRL_TX_PCOD_MASK & (config->tx_code << CHAN_CTRL_TX_PCOD_SHIFT)) | // TX Preamble Code
-		(CHAN_CTRL_RX_PCOD_MASK & (config->rx_code << CHAN_CTRL_RX_PCOD_SHIFT)); // RX Preamble Code
+
+	/* Tx Channel */
+	reg_val |= CHAN_CTRL_TX_CHAN_MASK & (chan << CHAN_CTRL_TX_CHAN_SHIFT);
+	/* Rx Channel */
+	reg_val |= CHAN_CTRL_RX_CHAN_MASK & (chan << CHAN_CTRL_RX_CHAN_SHIFT);
+	/* RX PRF */
+	reg_val |= CHAN_CTRL_RXFPRF_MASK & (config->prf << CHAN_CTRL_RXFPRF_SHIFT);
+	/* Non-standard SFD enable RX&TX */
+	reg_val |= (CHAN_CTRL_TNSSFD | CHAN_CTRL_RNSSFD) & (ns_sfd_result << CHAN_CTRL_TNSSFD_SHIFT);
+	/* Use DW non-standard SFD */
+	reg_val |= CHAN_CTRL_DWSFD & (use_dw_ns_sfd << CHAN_CTRL_DWSFD_SHIFT);
+	/* TX Preamble Code */
+	reg_val |= CHAN_CTRL_TX_PCOD_MASK & (config->tx_code << CHAN_CTRL_TX_PCOD_SHIFT);
+	/* RX Preamble Code */
+	reg_val |= CHAN_CTRL_RX_PCOD_MASK & (config->rx_code << CHAN_CTRL_RX_PCOD_SHIFT);
 
 	dev_dbg(printdev(lp), "CHAN_CTRL:0x%x\n", reg_val);
 
@@ -2754,6 +2763,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 
 	// Read and validate device ID return -1 if not recognised
 	if (DW1000_DEVICE_ID != dev_id) { // MP IC ONLY (i.e. DW1000) FOR THIS CODE
+		dev_err(&lp->spi->dev, "not detected!!!!\n"); 
 		goto not_supp;
 	}
 
