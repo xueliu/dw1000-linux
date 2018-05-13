@@ -2757,7 +2757,7 @@ dw1000_detect_device(struct dw1000_local *lp)
 
 	struct wpan_phy *phy = lp->hw->phy;
 
-	dev_info(printdev(lp), "%s\n", __func__);
+	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	dw1000_read_32bit_reg(lp, RG_DEV_ID, 0, &dev_id);
 
@@ -2770,14 +2770,14 @@ dw1000_detect_device(struct dw1000_local *lp)
 	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM | IEEE802154_HW_AFILT |
 			IEEE802154_HW_PROMISCUOUS;
 
-	chip = "dw1000";
+	chip = "DW1000";
 	phy->supported.channels[4] = 0xbe;
 	phy->current_channel = 2;
 	phy->current_page = 4;
 	phy->symbol_duration = 25;
 
 not_supp:
-	dev_info(&lp->spi->dev, "Detected %s chip id 0x%x\n", chip, dev_id);
+	dev_info(&lp->spi->dev, "Detected %s chip id: 0x%x\n", chip, dev_id);
 
 	return ret;
 }
@@ -2789,7 +2789,7 @@ static int dw1000_probe(struct spi_device *spi)
 	struct gpio_desc *rstn;
 	int rc;
 
-	dev_info(&spi->dev, "%s\n", __func__);
+	dev_dbg(&spi->dev, "%s\n", __func__);
 
 	if (!spi->irq) {
 		dev_err(&spi->dev, "no IRQ specified\n");
