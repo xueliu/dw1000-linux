@@ -340,120 +340,6 @@ const u16 LDE_REPLICA_COEFF[PCODES] =
 	LDE_REPC_PCODE_24
 };
 
-const double txpwr_compensation[NUM_CH] = { // TX_PWR_COMPENSATION
-	0.0,
-	0.035,
-	0.0,
-	0.0,
-	0.065,
-	0.0
-};
-
-typedef struct
-{
-	u8 channel ;
-	u8 prf ;
-	u8 datarate ;
-	u8 preambleCode ;
-	u8 preambleLength ;
-	u8 pacSize ;
-	u8 nsSFD ;
-	u16 sfdTO ;
-} chConfig_t ;
-
-
-//Configuration for DecaRanging Modes (8 default use cases selectable by the switch S1 on EVK)
-chConfig_t chConfig[8] ={
-	//mode 1 - S1: 7 off, 6 off, 5 off
-	{
-                        2,              // channel
-                        DW1000_PRF_16M,    // prf
-		DW1000_BR_110K,    // datarate
-                        3,             // preambleCode
-		DW1000_PLEN_1024,  // preambleLength
-		DW1000_PAC32,      // pacSize
-                        1,       // non-standard SFD
-                        (1025 + 64 - 32) //SFD timeout
-                    },
-                    //mode 2
-                    {
-                        2,              // channel
-		DW1000_PRF_16M,    // prf
-		DW1000_BR_6M8,    // datarate
-                        3,             // preambleCode
-		DW1000_PLEN_128,   // preambleLength
-		DW1000_PAC8,       // pacSize
-                        0,       // non-standard SFD
-                        (129 + 8 - 8) //SFD timeout
-                    },
-                    //mode 3
-                    {
-                        2,              // channel
-		DW1000_PRF_64M,    // prf
-		DW1000_BR_110K,    // datarate
-                        9,             // preambleCode
-		DW1000_PLEN_1024,  // preambleLength
-		DW1000_PAC32,      // pacSize
-                        1,       // non-standard SFD
-                        (1025 + 64 - 32) //SFD timeout
-                    },
-                    //mode 4
-                    {
-                        2,              // channel
-		DW1000_PRF_64M,    // prf
-		DW1000_BR_6M8,    // datarate
-                        9,             // preambleCode
-		DW1000_PLEN_128,   // preambleLength
-		DW1000_PAC8,       // pacSize
-                        0,       // non-standard SFD
-                        (129 + 8 - 8) //SFD timeout
-                    },
-                    //mode 5
-                    {
-                        5,              // channel
-		DW1000_PRF_16M,    // prf
-		DW1000_BR_110K,    // datarate
-                        3,             // preambleCode
-		DW1000_PLEN_1024,  // preambleLength
-		DW1000_PAC32,      // pacSize
-                        1,       // non-standard SFD
-                        (1025 + 64 - 32) //SFD timeout
-                    },
-                    //mode 6
-                    {
-                        5,              // channel
-		DW1000_PRF_16M,    // prf
-        DW1000_BR_6M8,    // datarate
-                        3,             // preambleCode
-        DW1000_PLEN_128,   // preambleLength
-        DW1000_PAC8,       // pacSize
-                        0,       // non-standard SFD
-                        (129 + 8 - 8) //SFD timeout
-                    },
-                    //mode 7
-                    {
-                        5,              // channel
-        DW1000_PRF_64M,    // prf
-        DW1000_BR_110K,    // datarate
-                        9,             // preambleCode
-        DW1000_PLEN_1024,  // preambleLength
-        DW1000_PAC32,      // pacSize
-                        1,       // non-standard SFD
-                        (1025 + 64 - 32) //SFD timeout
-                    },
-                    //mode 8
-                    {
-                        5,              // channel
-        DW1000_PRF_64M,    // prf
-        DW1000_BR_6M8,    // datarate
-                        9,             // preambleCode
-        DW1000_PLEN_128,   // preambleLength
-        DW1000_PAC8,       // pacSize
-                        0,       // non-standard SFD
-                        (129 + 8 - 8) //SFD timeout
-                    }
-};
-
 struct tx_config {
 	u8 pg_delay; /* Pulse generator delay value */
 	//TX POWER
@@ -2680,7 +2566,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	/* Set (non-standard) user SFD for improved performance */
 	if (config->ns_sfd) {
-		// Write non standard (DW) SFD length */
+		/* Write non standard (DW) SFD length */
 		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, NS_SDF_LEN[config->data_rate]);
 		ns_sfd_result = 3;
 		use_dw_ns_sfd = 1;
