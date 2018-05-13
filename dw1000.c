@@ -163,8 +163,8 @@
 #define DW1000_SLP_EN		0x1 /* enable sleep/deep sleep functionality */
 
 /* DW1000 INIT configuration parameters */
-#define DW1000_LOADUCODE	0x1
-#define DW1000_LOADNONE		0x0
+#define DW1000_LOAD_UCODE	0x1
+#define DW1000_LOAD_NONE	0x0
 
 /* DW1000 OTP operating parameter set selection */
 #define DW1000_OPSET_64LEN	0x0
@@ -173,6 +173,11 @@
 
 /* Call-back data RX frames flags */
 #define DW1000_CB_DATA_RX_FLAG_RNG 0x1 /* Ranging bit */
+
+/* DW1000 SPI speed */
+#define DW1000_SPI_LOW	3000000
+#define DW1000_SPI_HIGH	20000000
+
 
 /* TX/RX call-back data */
 struct dw1000_cb_data{
@@ -449,7 +454,37 @@ chConfig_t chConfig[8] ={
                     }
 };
 
-// Structure to hold device data
+struct tx_config {
+	u8 pg_delay; /* Pulse generator delay value */
+	//TX POWER
+	//31:24	BOOST_0.125ms_PWR
+	//23:16	BOOST_0.25ms_PWR-TX_SHR_PWR
+	//15:8	BOOST_0.5ms_PWR-TX_PHR_PWR
+	//7:0	DEFAULT_PWR-TX_DATA_PWR
+	u32 tx_power[2];
+};
+
+const struct tx_config SMART_POWER_TX_CONFIG [] = {
+	/* Channel 0 ----- this is just a place holder so the next array element is channel 1 */
+	{ 0x0, { 0x0, 0x0 } },
+	/* Channel 1 */
+	{ 0xC9, { 0x15355575, 0x07274767 } },
+	/* Channel 2 */
+	{ 0xC2, { 0x15355575, 0x07274767 } },
+	/* Channel 3 */
+	{ 0xC5, { 0x0F2F4F6F, 0x2B4B6B8B } },
+	/* Channel 4 */
+	{ 0x95, { 0x1F1F3F5F, 0x3A5A7A9A } },
+	/* Channel 5 */
+	{ 0xC0, { 0x0E082848, 0x25456585 } },
+	/* Channel 6 ----- this is just a place holder so the next array element is channel 7 */
+	{ 0x0, { 0x0, 0x0 } },
+	/* Channel 7 */
+	{ 0x93, { 0x32527292, 0x5171B1D1 } }
+};
+
+
+/* Structure to hold device data */
 struct dw1000_data {
 	u32 part_id; /* IC Part ID - read during initialisation */
 	u32 lot_id; /* IC Lot ID - read during initialisation */
@@ -612,11 +647,11 @@ dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, 
  *
  * returns SPI transmission status
  */
-static int
-dw1000_async_read_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data, void (*complete)(void *context)) {
-	// Read 1 bytes (8-bits) register into buffer
-	return dw1000_async_read_reg(lp, addr, index, 1, data, complete);
-}
+//static int
+//dw1000_async_read_8bit_reg(struct dw1000_local *lp, u16 addr, u16 index, u8 *data, void (*complete)(void *context)) {
+//	// Read 1 bytes (8-bits) register into buffer
+//	return dw1000_async_read_reg(lp, addr, index, 1, data, complete);
+//}
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn dw1000_async_read_16bit_reg()
@@ -1234,177 +1269,67 @@ dw1000_read_otp(struct dw1000_local *lp, u32 address, u8 length, u32 *array)
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
- * @fn _dw1000_set_otp_mr_regs / _dwt_otpsetmrregs()
+ * @fn dw1000_set_smart_tx_power / dwt_setsmarttxpower()
  *
- * @brief Configure the MR registers for initial programming (enable charge pump).
- * Read margin is used to stress the read back from the
- * programmed bit. In normal operation this is relaxed.
+ * @brief This call enables or disables the smart TX power feature.
  *
  * input parameters
- * @param mode - "0" : Reset all to 0x0:           MRA=0x0000, MRB=0x0000, MR=0x0000
- *               "1" : Set for inital programming: MRA=0x9220, MRB=0x000E, MR=0x1024
- *               "2" : Set for soak programming:   MRA=0x9220, MRB=0x0003, MR=0x1824
- *               "3" : High Vpp:                   MRA=0x9220, MRB=0x004E, MR=0x1824
- *               "4" : Low Read Margin:            MRA=0x0000, MRB=0x0003, MR=0x0000
- *               "5" : Array Clean:                MRA=0x0049, MRB=0x0003, MR=0x0024
- *               "4" : Very Low Read Margin:       MRA=0x0000, MRB=0x0003, MR=0x0000
+ * @param enable - this enables or disables the TX smart power (1 = enable, 0 = disable)
  *
  * output parameters
  *
- * returns DWT_SUCCESS for success, or DWT_ERROR for error
+ * no return value
  */
 static int
-_dw1000_set_otp_mr_regs(struct dw1000_local *lp, int mode)
+dw1000_set_smart_tx_power(struct dw1000_local *lp, bool enable)
 {
-	u8 rd_buf[4];
-	u8 wr_buf[4];
-	u32 mra = 0, mrb = 0, mr = 0;
-
+	int ret;
 	dev_dbg(printdev(lp), "%s\n", __func__);
+	/* Config system register */
+	ret = dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sys_cfg_reg);
+	if (ret)
+		return ret;
 
-	// PROGRAMME MRA
-	// Set MRA, MODE_SEL
-	wr_buf[0] = 0x03;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-
-	// Load data
-	switch (mode & 0x0f) {
-	case 0x0 :
-		mr = 0x0000;
-		mra = 0x0000;
-		mrb = 0x0000;
-		break;
-	case 0x1 :
-		mr = 0x1024;
-		mra = 0x9220; // Enable CPP mon
-		mrb = 0x000e;
-		break;
-	case 0x2 :
-		mr = 0x1824;
-		mra = 0x9220;
-		mrb = 0x0003;
-		break;
-	case 0x3 :
-		mr = 0x1824;
-		mra = 0x9220;
-		mrb = 0x004e;
-		break;
-	case 0x4 :
-		mr = 0x0000;
-		mra = 0x0000;
-		mrb = 0x0003;
-		break;
-	case 0x5 :
-		mr = 0x0024;
-		mra = 0x0000;
-		mrb = 0x0003;
-		break;
-	default :
-		// TODO: return error
-		return false;
+	/* Smart power configuration */
+	if(enable) {
+		lp->pdata.sys_cfg_reg &= ~(SYS_CFG_DIS_STXP);
+	} else{
+		lp->pdata.sys_cfg_reg |= SYS_CFG_DIS_STXP;
 	}
 
-	wr_buf[0] = mra & 0x00ff;
-	wr_buf[1] = (mra & 0xff00) >> 8;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_WDAT, 2, wr_buf);
+	return dw1000_write_32bit_reg(lp, SYS_CFG_ID, 0, lp->pdata.sys_cfg_reg);
+}
 
-
-	// Set WRITE_MR
-	wr_buf[0] = 0x08;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-
-	// Wait?
-
-	// Set Clear Mode sel
-	wr_buf[0] = 0x02;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-
-	// Set AUX update, write MR
-	wr_buf[0] = 0x88;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-	// Clear write MR
-	wr_buf[0] = 0x80;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-	// Clear AUX update
-	wr_buf[0] = 0x00;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-
-	///////////////////////////////////////////
-	// PROGRAM MRB
-	// Set SLOW, MRB, MODE_SEL
-	wr_buf[0] = 0x05;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-
-	wr_buf[0] = mrb & 0x00ff;
-	wr_buf[1] = (mrb & 0xff00) >> 8;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_WDAT, 2, wr_buf);
-
-	// Set WRITE_MR
-	wr_buf[0] = 0x08;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-
-	// Wait?
-
-	// Set Clear Mode sel
-	wr_buf[0] = 0x04;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-
-	// Set AUX update, write MR
-	wr_buf[0] = 0x88;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-	// Clear write MR
-	wr_buf[0] = 0x80;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-	// Clear AUX update
-	wr_buf[0] = 0x00;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-
-	// PROGRAM MR
-	// Set SLOW, MODE_SEL
-	wr_buf[0] = 0x01;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-	// Load data
-
-	wr_buf[0] = mr & 0x00ff;
-	wr_buf[1] = (mr & 0xff00) >> 8;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_WDAT, 2, wr_buf);
-
-	// Set WRITE_MR
-	wr_buf[0] = 0x08;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-
-	// Wait?
-	usleep_range(100, 120);
-	// Set Clear Mode sel
-	wr_buf[0] = 0x00;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-
-	// Read confirm mode writes.
-	// Set man override, MRA_SEL
-	wr_buf[0] = OTP_CTRL_OTPRDEN;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-	wr_buf[0] = 0x02;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-	// MRB_SEL
-	wr_buf[0] = 0x04;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-	usleep_range(100, 120);
-
-	// Clear mode sel
-	wr_buf[0] = 0x00;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL + 1, 1, wr_buf);
-	// Clear MAN_OVERRIDE
-	wr_buf[0] = 0x00;
-	dw1000_write_reg(lp, OTP_IF_ID, OTP_CTRL, 1, wr_buf);
-
-	usleep_range(10, 16);
-
-	if (((mode & 0x0f) == 0x1) || ((mode & 0x0f) == 0x2)) {
-		// Read status register
-		dw1000_read_reg(lp, OTP_IF_ID, OTP_STAT, 1, rd_buf);
-	}
-
-	return 0;
+/*! ------------------------------------------------------------------------------------------------------------------
+ * @fn dw1000_config_tx_rf / dwt_configuretxrf()
+ *
+ * @brief This function provides the API for the configuration of the TX spectrum
+ * including the power and pulse generator delay. The input is a pointer to the data structure
+ * of type dwt_txconfig_t that holds all the configurable items.
+ *
+ * input parameters
+ * @param config    -   pointer to the txrf configuration structure, which contains the tx rf config data
+ *
+ * output parameters
+ *
+ * no return value
+ */
+static int
+dw1000_config_tx_rf(struct dw1000_local *lp)
+{
+	int ret;
+	u8 channel = lp->config.chan;
+	u8 pg_delay = SMART_POWER_TX_CONFIG[channel].pg_delay;
+	u32 tx_pwr = SMART_POWER_TX_CONFIG[channel].tx_power[lp->config.prf - 1];
+	
+	dev_dbg(printdev(lp), "%s\n", __func__);
+	
+	/* Configure RF TX pluse generator delay */
+	ret = dw1000_write_8bit_reg(lp, TX_CAL_ID, TC_PGDELAY_OFFSET, pg_delay);
+	if (ret)
+		return ret;
+	/* Configure TX power */
+	return ret = dw1000_write_32bit_reg(lp, TX_POWER_ID, 0, tx_pwr);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1694,16 +1619,16 @@ dw1000_irq_read_status_complete(void *context)
 
 	/* Handle TX confirmation event */
 	if (status & SYS_STATUS_TXFRS) {
-        if (lp->is_tx) {
-            dev_dbg(printdev(lp), "TX is done\n");
-            /* Clear TX event bits */
-            lp->reg_val = SYS_STATUS_ALL_TX;
-            ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_tx_status_complete);
-            if (ret)
-                dev_err(printdev(lp), "failed to clear TX event bits\n");
-        } else {
-            dev_dbg(printdev(lp), "ACK is done\n");
-        }
+		if (lp->is_tx) {
+			dev_dbg(printdev(lp), "TX is done\n");
+			/* Clear TX event bits */
+			lp->reg_val = SYS_STATUS_ALL_TX;
+			ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_tx_status_complete);
+			if (ret)
+				dev_err(printdev(lp), "failed to clear TX event bits\n");
+		} else {
+			dev_dbg(printdev(lp), "ACK is done\n");
+		}
 	}
 
 	// Handle frame reception/preamble detect timeout events
@@ -2118,15 +2043,15 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	/* Read set interrupt mask */
+	disable_irq(lp->spi->irq);
+
+	/* Read interrupt mask */
 	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
 
 	// Need to beware of interrupts occurring in the middle of following read modify write cycle
 	// We can disable the radio, but before the status is cleared an interrupt can be set (e.g. the
 	// event has just happened before the radio was disabled)
 	// thus we need to disable interrupt during this
-
-	disable_irq(lp->spi->irq);
 
 //	stat = decamutexon();
 
@@ -2145,11 +2070,11 @@ dw1000_force_trx_off(struct dw1000_local *lp)
 
 	// Enable/restore interrupts again... */
 //	decamutexoff(stat);
-	enable_irq(lp->spi->irq);
+	//enable_irq(lp->spi->irq);
 
-	lp->pdata.wait_for_resp = 0;
+	//lp->pdata.wait_for_resp = 0;
 
-} // end deviceforcetrxoff()
+}
 
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn dw1000_start / dwt_rxenable()
@@ -2261,34 +2186,25 @@ dw1000_set_channel(struct ieee802154_hw *hw, u8 page, u8 channel)
 
 	BUG_ON(page != 4);
 
+	lp->config.chan = channel;
+
 	dev_dbg(printdev(lp), "%s(%d)\n", __func__, channel);
 
 //	dev_dbg(printdev(lp), "channel: %d\n", channel);
 //	dev_dbg(printdev(lp), "channel index: %d\n", CHAN_IDX[channel]);
 
-	// Configure PLL2/RF PLL block CFG/TUNE (for a given channel)
+	/* Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
 	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, FS_PLL_CFG[CHAN_IDX[channel]]);
 	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_PLLTUNE_OFFSET, FS_PLL_TUNE[CHAN_IDX[channel]]);
 
-	// Configure RF RX blocks (for specified channel/bandwidth)
+	/* Configure RF RX blocks (for specified channel/bandwidth) */
 	dw1000_write_8bit_reg(lp, RF_CONF_ID, RF_RXCTRLH_OFFSET, RX_CONFIG[bandwidth]);
 
-	// Configure RF TX blocks (for specified channel and PRF)
-	// Configure RF TX control
+	/* Configure RF TX blocks (for specified channel and PRF) */
+	/* Configure RF TX control */
 	dw1000_write_32bit_reg(lp, RF_CONF_ID, RF_TXCTRL_OFFSET, TX_CONFIG[CHAN_IDX[channel]]);
 
-	return 0;
-}
-
-#define DW1000_MAX_ED_LEVELS 0xF
-static const s32 dw1000_ed_levels[DW1000_MAX_ED_LEVELS + 1] = {
-	-9400, -9200, -9000, -8800, -8600, -8400, -8200, -8000, -7800, -7600,
-	-7400, -7200, -7000, -6800, -6600, -6400,
-};
-
-static inline int
-dw1000_update_cca_ed_level(struct dw1000_local *lp, int rssi_base_val)
-{
+	dw1000_config_tx_rf(lp);
 
 	return 0;
 }
@@ -2766,7 +2682,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	// For 110 kbps we need a special setup */
+	/* For 110 kbps we need a special setup */
 	if (DW1000_BR_110K == config->data_rate) {
 		lp->pdata.sys_cfg_reg |= SYS_CFG_RXM110K;
 		reg16 >>= 3; // lde_replicaCoeff must be divided by 8 */
@@ -2879,11 +2795,11 @@ _dw1000_set_spi_low(struct spi_device *spi)
 {
 	dev_dbg(&spi->dev, "%s\n", __func__);
 
-	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
+//	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
 
-	spi->max_speed_hz = 3000000;
+	spi->max_speed_hz = DW1000_SPI_LOW;
 
-	dev_dbg(&spi->dev, "low max_speed is %d Hz\n", spi->max_speed_hz);
+//	dev_dbg(&spi->dev, "low max_speed is %d Hz\n", spi->max_speed_hz);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2897,14 +2813,15 @@ _dw1000_set_spi_low(struct spi_device *spi)
  */
 
 static void
-_dw1000_set_spi_high(struct spi_device *spi) {
+_dw1000_set_spi_high(struct spi_device *spi)
+{
 	dev_dbg(&spi->dev, "%s\n", __func__);
 
-	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
+//	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
 
-	spi->max_speed_hz = 20000000;
+	spi->max_speed_hz = DW1000_SPI_HIGH;
 
-	dev_dbg(&spi->dev, "high max_speed is %d Hz\n", spi->max_speed_hz);
+//	dev_dbg(&spi->dev, "high max_speed is %d Hz\n", spi->max_speed_hz);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2922,8 +2839,8 @@ _dw1000_set_spi_high(struct spi_device *spi) {
  *
  * input parameters
  * @param config    -   specifies what configuration to load
- *                  DW1000_LOADUCODE     0x1 - load the LDE microcode from ROM - enabled accurate RX timestamp
- *                  DW1000_LOADNONE      0x0 - do not load any values from OTP memory
+ *                  DW1000_LOAD_UCODE     0x1 - load the LDE microcode from ROM - enabled accurate RX timestamp
+ *                  DW1000_LOAD_NONE      0x0 - do not load any values from OTP memory
  *
  * output parameters
  *
@@ -2944,15 +2861,15 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	/* Make sure the device is completely reset before starting initialisation */
 	dw1000_soft_reset(lp);
 
-	/* NOTE: set system clock to XTI - this is necessary to make sure the values read by _dwt_otpread are reliable */
+	/* NOTE: set system clock to XTI - this is necessary to make sure the values read from OTP are reliable */
 	_dw1000_enable_clocks(lp, FORCE_SYS_XTI);
 
 	/* Configure the CPLL lock detect */
 	dw1000_write_8bit_reg(lp, EXT_SYNC_ID, EC_CTRL_OFFSET, EC_CTRL_PLLLCK);
 
 	/* Read OTP revision number */
-	// Read 32 bit value, XTAL trim val is in low octet-0 (5 bits)
-	// TODO: otp_addr u16 or u32
+	/* Read 32 bit value, XTAL trim val is in low octet-0 (5 bits) */
+	/* TODO: otp_addr u16 or u32 */
 	_dw1000_read_otp(lp, XTRIM_ADDRESS, (u32*) &otp_addr);
 	otp_addr = otp_addr & 0xffff;
 
@@ -2960,36 +2877,35 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 	lp->pdata.otprev = (otp_addr >> 8) & 0xff;
 	dev_info(printdev(lp), "OTP Rev: 0x%x", lp->pdata.otprev);
 
-	// Load LDO tune from OTP and kick it if there is a value actually programmed.
+	/* Load LDO tune from OTP and kick it if there is a value actually programmed */
 	_dw1000_read_otp(lp, LDOTUNE_ADDRESS, &ldo_tune);
 	if ((ldo_tune & 0xFF) != 0) {
-		dev_info(printdev(lp), "The device has been calibrated\n");
-		// Kick LDO tune
-		// Set load LDE kick bit
+		dev_info(printdev(lp), "OTP LDO Turn: 0x%x", ldo_tune & 0xFF);
+		/* Kick LDO tune */
+		/* Set load LDE kick bit */
 		dw1000_write_8bit_reg(lp, OTP_IF_ID, OTP_SF, OTP_SF_LDO_KICK);
-		// LDO tune must be kicked at wake-up
+		/* LDO tune must be kicked at wake-up */
 		lp->pdata.sleep_mode |= AON_WCFG_ONW_LLDO;
 	}
 
-	// Load Part and Lot ID from OTP
+	/* Load Part and Lot ID from OTP */
 	_dw1000_read_otp(lp, PARTID_ADDRESS, &lp->pdata.part_id);
 	_dw1000_read_otp(lp, LOTID_ADDRESS, &lp->pdata.lot_id);
 
-	// XTAL trim value is set in OTP for DW1000 module and EVK/TREK boards but that might not be the case in a custom design
+	/* XTAL trim value is set in OTP for DW1000 module and EVK/TREK boards but that might not be the case in a custom design */
 	lp->pdata.init_xtrim = otp_addr & 0x1F;
-	// A value of 0 means that the crystal has not been trimmed
+	/* A value of 0 means that the crystal has not been trimmed */
 	if (!lp->pdata.init_xtrim) {
-		dev_info(printdev(lp), "the crystal has not been trimmed\n");
-		// Set to mid-range if no calibration value inside
+		/* Set to mid-range if no calibration value inside */
 		lp->pdata.init_xtrim = FS_XTALT_MIDRANGE;
 	}
-	dev_info(printdev(lp), "the crystal has been trimmed\n");
+	dev_info(printdev(lp), "OTP XTAL Trim: 0x%x", ldo_tune & 0xFF);
 
-	// Configure XTAL trim
+	/* Configure XTAL trim */
 	dw1000_set_xtal_trim(lp, lp->pdata.init_xtrim);
 
-	// Load leading edge detect code
-	if (config & DW1000_LOADUCODE) {
+	/* Load leading edge detect code */
+	if (config & DW1000_LOAD_UCODE) {
 		_dw1000_load_ucode_from_rom(lp);
 		lp->pdata.sleep_mode |= AON_WCFG_ONW_LLDE; // microcode must be loaded at wake-up
 		dev_info(printdev(lp), "Microcode is loaded\n");
@@ -3001,14 +2917,14 @@ dw1000_hw_init(struct dw1000_local *lp, u16 config)
 		dw1000_write_16bit_reg(lp, PMSC_ID, PMSC_CTRL1_OFFSET + 1, rega);
 	}
 
-	// Enable clocks for sequencing
+	/* Enable clocks for sequencing */
 	_dw1000_enable_clocks(lp, ENABLE_ALL_SEQ);
 
-	// The 3 bits in AON CFG1 register must be cleared to ensure proper operation of the DW1000 in DEEPSLEEP mode.
+	/* The 3 bits in AON CFG1 register must be cleared to ensure proper operation of the DW1000 in DEEPSLEEP mode. */
 	dw1000_write_8bit_reg(lp, AON_ID, AON_CFG1_OFFSET, 0x00);
 
-	// Read system register / store local copy
-	// Read sysconfig register
+	/* Read system register / store local copy */
+	/* Read sysconfig register */
 	dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sys_cfg_reg);
 
 	return 0;
@@ -3121,7 +3037,7 @@ static int dw1000_probe(struct spi_device *spi)
 
 	_dw1000_set_spi_low(spi);
 
-	rc = dw1000_hw_init(lp, DW1000_LOADUCODE);
+	rc = dw1000_hw_init(lp, DW1000_LOAD_UCODE);
 	if (rc)
 		goto free_dev;
 
@@ -3134,13 +3050,16 @@ static int dw1000_probe(struct spi_device *spi)
 		dev_info(&spi->dev, "OTP EUI not found"); 
 	}
 
-	_dw1000_set_spi_high(spi);
-
 	/* Configure GPIOs to show TX/RX activity */
-	//  dw1000_set_lna_pa_mode(lp, 1, 1);
+	dw1000_set_lna_pa_mode(lp, 1, 1);
 
 	/* Configure LEDs management */
-	//  dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
+	dw1000_set_leds(lp, DW1000_LEDS_ENABLE);
+
+	/* Enable smart tx power */
+	dw1000_set_smart_tx_power(lp, true);
+
+	_dw1000_set_spi_high(spi);
 
 	rc = devm_request_irq(&spi->dev, spi->irq, dw1000_isr,
 			      IRQF_TRIGGER_HIGH,
@@ -3164,7 +3083,8 @@ static int dw1000_probe(struct spi_device *spi)
 	lp->config.sfd_timeout = (129 + 8 - 8);			/* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
 
 	dw1000_configure(lp);
-
+	dw1000_config_tx_rf(lp);
+	
 	/* going into sleep by default */
 	//dw1000_sleep(lp);
 
@@ -3192,7 +3112,8 @@ dw1000_remove(struct spi_device *spi)
 {
 	struct dw1000_local *lp = spi_get_drvdata(spi);
 
-	// TODO: how to disbale the chip
+	dw1000_force_trx_off(lp);
+	
 	ieee802154_unregister_hw(lp->hw);
 	ieee802154_free_hw(lp->hw);
 
