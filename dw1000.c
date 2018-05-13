@@ -253,19 +253,19 @@ const u8 RX_CONFIG[NUM_BW] =
 	RF_RXCTRLH_WBW
 };
 
-struct agc_cfg_struct {
+struct agc_cfg {
 	u32 lo32;
 	u16 target[NUM_PRF];
 };
 
-const struct agc_cfg_struct agc_config =
+const struct agc_cfg AGC_CONFIG =
 {
 	AGC_TUNE2_VAL,
-	{ AGC_TUNE1_16M, AGC_TUNE1_64M }  //adc target
+	{ AGC_TUNE1_16M, AGC_TUNE1_64M }
 };
 
 /* DW1000 non-standard SFD length for 110k, 850k and 6.81M */
-const u8 dw_ns_SFD_len[NUM_BR] =
+const u8 NS_SDF_LEN[NUM_BR] =
 {
 	DW_NS_SFD_LEN_110K,
 	DW_NS_SFD_LEN_850K,
@@ -625,7 +625,6 @@ dw1000_async_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, 
 	}
 
 	lp->async_read_header_xfer.len = cnt;
-
 	lp->async_read_msg.complete = complete;
 
 	return spi_async(lp->spi, &lp->async_read_msg);
@@ -733,7 +732,7 @@ dw1000_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *
 	u8 header[3] = { 0, 0, 0};
 	/* Counter for length of header */
 	int   cnt = 0;
-//	int i;
+
 	struct spi_message msg;
 	struct spi_transfer header_xfer = {
 		.tx_buf = header,
@@ -766,11 +765,6 @@ dw1000_read_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, void *
 	}
 
 	header_xfer.len = cnt;
-
-//	for (i = 0; i < cnt; i++) {
-//		dev_dbg(printdev(lp), "addr[%d]:0x%x\n", i, header[i]);
-//	}
-
 	spi_message_init(&msg);
 	spi_message_add_tail(&header_xfer, &msg);
 	spi_message_add_tail(&data_xfer, &msg);
@@ -876,11 +870,9 @@ static int
 dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const void *data, void (*complete)(void *context)) {
 
 	// Counter for length of header
-	int   cnt = 0;
+	int cnt = 0;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
-
-//  dev_dbg(printdev(lp), "data:0x%x\n", *(u32*)(data));
 
 	lp->reg_val_xfer.len = length;
 	lp->reg_val_xfer.tx_buf = data;
@@ -907,7 +899,6 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
 	}
 
 	lp->reg_addr_xfer.len = cnt;
-
 	lp->reg_msg.complete = complete;
 
 	return spi_async(lp->spi, &lp->reg_msg);
@@ -1007,8 +998,7 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 	// Buffer to compose header in
 	u8 header[3] = { 0, 0, 0 };
 	// Counter for length of header
-	int   cnt = 0;
-//	int i;
+	int cnt = 0;
 	struct spi_message msg;
 
 	struct spi_transfer header_xfer = {
@@ -1019,8 +1009,6 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 		.len = length,
 		.tx_buf = data,
 	};
-
-//	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
 	// For index of 0, no sub-index is required
@@ -1044,10 +1032,6 @@ dw1000_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length, const
 	}
 
 	header_xfer.len = cnt;
-
-//	for (i = 0; i < cnt; i++) {
-//		dev_dbg(printdev(lp), "write addr[%d]:0x%x\n", i, header[i]);
-//	}
 
 	spi_message_init(&msg);
 	spi_message_add_tail(&header_xfer, &msg);
@@ -1148,11 +1132,11 @@ _dw1000_enable_clocks(struct dw1000_local *lp, int clocks)
 		reg[1] = reg[1] & 0xfe;
 		break;
 	case FORCE_SYS_XTI:
-		// System and RX
+		/* System and RX */
 		reg[0] = 0x01 | (reg[0] & 0xfc);
 		break;
 	case FORCE_SYS_PLL:
-		// System
+		/* System */
 		reg[0] = 0x02 | (reg[0] & 0xfc);
 		break;
 	case READ_ACC_ON:
@@ -1285,6 +1269,7 @@ dw1000_set_smart_tx_power(struct dw1000_local *lp, bool enable)
 {
 	int ret;
 	dev_dbg(printdev(lp), "%s\n", __func__);
+	
 	/* Config system register */
 	ret = dw1000_read_32bit_reg(lp, SYS_CFG_ID, 0, &lp->pdata.sys_cfg_reg);
 	if (ret)
@@ -1356,7 +1341,7 @@ void dw1000_sync_rx_buf_ptrs(struct dw1000_local *lp) {
 
 	/* IC side Receive Buffer Pointer */
 	if ((buff & (SYS_STATUS_ICRBP >> 24)) !=
-	    /* Host Side Receive Buffer Pointer */
+		/* Host Side Receive Buffer Pointer */
 		((buff & (SYS_STATUS_HSRBP >> 24)) << 1)) {
 		/* We need to swap RX buffer status reg (write one to toggle internally) */
 		dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_HRBT_OFFSET, 0x01);
@@ -1373,16 +1358,6 @@ static inline void
 dw1000_awake(struct dw1000_local *lp)
 {
 
-}
-
-static void
-dw1000_irq_enable_rx_complete(void *context) {
-
-    struct dw1000_local *lp = context;
-
-    dev_dbg(printdev(lp), "%s\n", __func__);
-
-//  enable_irq(lp->spi->irq);
 }
 
 static void
@@ -1426,7 +1401,7 @@ dw1000_irq_read_rx_buf_complete(void *context)
 
 	/* Enable rx */
 	lp->reg_val = SYS_CTRL_RXENAB;
-	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
+	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, NULL);
 	if (ret)
 		dev_err(printdev(lp), "failed to enable rx\n");
 
@@ -1565,7 +1540,7 @@ dw1000_clear_tx_status_complete(void *context)
 
 	/* Enable rx */
 	lp->reg_val = SYS_CTRL_RXENAB;
-	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, dw1000_irq_enable_rx_complete);
+	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, NULL);
 	if (ret)
 		dev_err(printdev(lp), "failed to enable rx\n");
 //  }
@@ -1899,11 +1874,7 @@ static int
 dw1000_set_interrupt(struct dw1000_local *lp, u32 bitmask, u8 enable) {
 
 	int ret;
-//	decaIrqStatus_t stat;
 	u32 mask;
-
-	/* Need to beware of interrupts occurring in the middle of following read modify write cycle */
-//	stat = decamutexon();
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -1919,8 +1890,6 @@ dw1000_set_interrupt(struct dw1000_local *lp, u32 bitmask, u8 enable) {
 
 	/* write new value */
 	return dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, mask);
-
-//	decamutexoff(stat);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1946,7 +1915,6 @@ void dw1000_set_lna_pa_mode(struct dw1000_local *lp, int lna, int pa) {
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-//	uint32 gpio_mode = dwt_read32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET);
 	ret = dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, &gpio_mode);
 
 	gpio_mode &= ~(GPIO_MSGP4_MASK | GPIO_MSGP5_MASK | GPIO_MSGP6_MASK);
@@ -1956,7 +1924,7 @@ void dw1000_set_lna_pa_mode(struct dw1000_local *lp, int lna, int pa) {
 	if (pa) {
 		gpio_mode |= (GPIO_PIN5_EXTTXE | GPIO_PIN4_EXTPA);
 	}
-//	dwt_write32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET, gpio_mode);
+
 	ret = dw1000_write_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, gpio_mode);
 }
 
@@ -1986,18 +1954,14 @@ void dw1000_set_leds(struct dw1000_local *lp, u8 mode) {
 
 	if (mode & DW1000_LEDS_ENABLE) {
 		/* Set up MFIO for LED output */
-//		reg = dwt_read32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET);
 		ret = dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, &reg);
 		reg &= ~(GPIO_MSGP2_MASK | GPIO_MSGP3_MASK);
 		reg |= (GPIO_PIN2_RXLED | GPIO_PIN3_TXLED);
-//		dwt_write32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
 		ret = dw1000_write_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
 
 		/* Enable LP Oscillator to run from counter and turn on de-bounce clock */
-//		reg = dwt_read32bitoffsetreg(PMSC_ID, PMSC_CTRL0_OFFSET);
 		ret = dw1000_read_32bit_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, &reg);
 		reg |= (PMSC_CTRL0_GPDCE | PMSC_CTRL0_KHZCLEN);
-//		dwt_write32bitoffsetreg(PMSC_ID, PMSC_CTRL0_OFFSET, reg);
 		ret = dw1000_write_32bit_reg(lp, PMSC_ID, PMSC_CTRL0_OFFSET, reg);
 
 		/* Enable LEDs to blink and set default blink time. */
@@ -2006,20 +1970,17 @@ void dw1000_set_leds(struct dw1000_local *lp, u8 mode) {
 		if (mode & DW1000_LEDS_INIT_BLINK) {
 			reg |= PMSC_LEDC_BLINK_NOW_ALL;
 		}
-//		dwt_write32bitoffsetreg(PMSC_ID, PMSC_LEDC_OFFSET, reg);
+
 		ret = dw1000_write_32bit_reg(lp, PMSC_ID, PMSC_LEDC_OFFSET, reg);
 		/* Clear force blink bits if needed. */
 		if (mode & DW1000_LEDS_INIT_BLINK) {
 			reg &= ~PMSC_LEDC_BLINK_NOW_ALL;
-//			dwt_write32bitoffsetreg(PMSC_ID, PMSC_LEDC_OFFSET, reg);
 			ret = dw1000_write_32bit_reg(lp, PMSC_ID, PMSC_LEDC_OFFSET, reg);
 		}
 	} else {
 		/* Clear the GPIO bits that are used for LED control. */
-//		reg = dwt_read32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET);
 		ret = dw1000_read_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, &reg);
 		reg &= ~(GPIO_MSGP2_MASK | GPIO_MSGP3_MASK);
-//		dwt_write32bitoffsetreg(GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
 		ret = dw1000_write_32bit_reg(lp, GPIO_CTRL_ID, GPIO_MODE_OFFSET, reg);
 	}
 }
@@ -2101,7 +2062,7 @@ dw1000_start(struct ieee802154_hw *hw)
 //  int mode = DW1000_START_RX_IMMEDIATE;
 //  u16 mode = (u16)SYS_CTRL_RXENAB;
 
-  struct dw1000_local *lp = hw->priv;
+	struct dw1000_local *lp = hw->priv;
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
@@ -2110,16 +2071,16 @@ dw1000_start(struct ieee802154_hw *hw)
 //	}
 
 	/* Configure frame filtering. Frame filtering must be enabled for Auto ACK to work. */
-    dw1000_enable_frame_filter(lp, DW1000_FF_NORMAL);
+	dw1000_enable_frame_filter(lp, DW1000_FF_NORMAL);
 
 	/* Activate auto-acknowledgement. Time is set to 0 so that the ACK is sent as soon as possible after reception of a frame. */
 	//dw1000_enable_auto_ack(lp, 0);
 
-    dw1000_set_interrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
+	dw1000_set_interrupt(lp, DW1000_INT_TFRS | DW1000_INT_RFCG, 1);
 
 	enable_irq(lp->spi->irq);
 
-    return dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
+	return dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
 }
 
 
@@ -2144,7 +2105,7 @@ dw1000_stop(struct ieee802154_hw *hw)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	/* Read set interrupt mask */
+	/* Read interrupt mask */
 	dw1000_read_32bit_reg(lp, SYS_MASK_ID, 0, &mask);
 
 	// Need to beware of interrupts occurring in the middle of following read modify write cycle
@@ -2153,8 +2114,6 @@ dw1000_stop(struct ieee802154_hw *hw)
 	// thus we need to disable interrupt during this
 
 	disable_irq(lp->spi->irq);
-
-//	stat = decamutexon();
 
 	/* Clear interrupt mask - so we don't get any unwanted events */
 	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, 0);
@@ -2168,10 +2127,6 @@ dw1000_stop(struct ieee802154_hw *hw)
 	dw1000_sync_rx_buf_ptrs(lp);
 
 	dw1000_write_32bit_reg(lp, SYS_MASK_ID, 0, mask); // Set interrupt mask to what it was */
-
-	// Enable/restore interrupts again... */
-//	decamutexoff(stat);
-//	enable_irq(lp->spi->irq);
 
 	lp->pdata.wait_for_resp = 0;
 }
@@ -2252,20 +2207,6 @@ dw1000_set_hw_addr_filt(struct ieee802154_hw *hw,
 	return 0;
 }
 
-#define DW1000_MAX_TX_POWERS 0x1F
-static const s32 dw1000_powers[DW1000_MAX_TX_POWERS + 1] = {
-	500, 400, 300, 200, 100, 0, -100, -200, -300, -400, -500, -600, -700,
-	-800, -900, -1000, -1100, -1200, -1300, -1400, -1500, -1600, -1700,
-	-1800, -1900, -2000, -2100, -2200, -2300, -2400, -2500, -2600,
-};
-
-
-static int
-dw1000_set_txpower(struct ieee802154_hw *hw, s32 mbm)
-{
-	return 0;
-}
-
 static int
 dw1000_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
 {
@@ -2301,7 +2242,6 @@ static const struct ieee802154_ops dw1000_ops = {
 	.start = dw1000_start,
 	.stop = dw1000_stop,
 	.set_hw_addr_filt = dw1000_set_hw_addr_filt,
-	.set_txpower = dw1000_set_txpower,
 	.set_promiscuous_mode = dw1000_set_promiscuous_mode,
 };
 
@@ -2313,9 +2253,6 @@ dw1000_setup_reg_messages(struct dw1000_local *lp)
 
 	lp->reg_addr_xfer.tx_buf = lp->reg_addr;
 
-//	lp->reg_val_xfer.tx_buf = lp->reg_val;
-//	lp->reg_val_xfer.rx_buf = lp->reg_val;
-
 	spi_message_add_tail(&lp->reg_addr_xfer, &lp->reg_msg);
 	spi_message_add_tail(&lp->reg_val_xfer, &lp->reg_msg);
 }
@@ -2326,9 +2263,6 @@ dw1000_setup_async_read_messages(struct dw1000_local *lp) {
 	lp->async_read_msg.context = lp;
 
 	lp->async_read_header_xfer.tx_buf = lp->async_read_header;
-
-//	lp->async_read_data_xfer.tx_buf = lp->reg_val;
-//	lp->async_read_data_xfer.rx_buf = lp->irq_reg_data;
 
 	spi_message_add_tail(&lp->async_read_header_xfer, &lp->async_read_msg);
 	spi_message_add_tail(&lp->async_read_data_xfer, &lp->async_read_msg);
@@ -2490,7 +2424,7 @@ void dw1000_set_xtal_trim(struct dw1000_local *lp, u8 value)
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
- * @fn _dwt_loaducodefromrom()
+ * @fn _dw1000_load_ucode_from_rom / _dwt_loaducodefromrom()
  *
  * @brief  load ucode from OTP MEMORY or ROM
  *
@@ -2540,10 +2474,6 @@ static int dw1000_reg_show(struct seq_file *file, void *offset) {
 	seq_printf(file, "SYS_CTRL:\t0x%x\n", sys_ctrl);
 	seq_printf(file, "SYS_MASK:\t0x%x\n", sys_mask);
 	seq_printf(file, "GPIO_CTRL:\t0x%x\n", gpio_ctrl);
-
-//	dw1000_write_32bit_reg(lp, SYS_STATUS_ID, 0, sys_status);
-
-//  dw1000_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_RXENAB);
 
 	return 0;
 }
@@ -2672,12 +2602,12 @@ static void dw1000_debugfs_remove(void)
  */
 void dw1000_configure(struct dw1000_local *lp) {
 	struct dw1000_config *config = &lp->config;
-	u8 nsSfd_result  = 0;
-	u8 useDWnsSFD = 0;
+	u8 ns_sfd_result  = 0;
+	u8 use_dw_ns_sfd = 0;
 	u8 chan = config->chan;
-	u32 regval;
+	u32 reg_val;
 	u16 reg16 = LDE_REPLICA_COEFF[config->rx_code];
-	u8 prfIndex = config->prf - DW1000_PRF_16M;
+	u8 prf_index = config->prf - DW1000_PRF_16M;
 	u8 bw = ((chan == 4) || (chan == 7)) ? 1 : 0; // Select wide or narrow band
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
@@ -2702,7 +2632,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	/* Set the lde_replicaCoeff */
 	dw1000_write_16bit_reg(lp, LDE_IF_ID, LDE_REPC_OFFSET, reg16);
 
-	_dw1000_config_lde(lp, prfIndex);
+	_dw1000_config_lde(lp, prf_index);
 
 	/* Configure PLL2/RF PLL block CFG/TUNE (for a given channel) */
 	dw1000_write_32bit_reg(lp, FS_CTRL_ID, FS_PLLCFG_OFFSET, FS_PLL_CFG[CHAN_IDX[chan]]);
@@ -2720,7 +2650,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE0b_OFFSET, SFD_THRESHOLD[config->data_rate][config->ns_sfd]);
 
 	/* DTUNE1 */
-	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, DTUNE1[prfIndex]);
+	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1a_OFFSET, DTUNE1[prf_index]);
 
 	if (config->data_rate == DW1000_BR_110K) {
 		dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_TUNE1b_OFFSET, DRX_TUNE1b_110K);
@@ -2735,7 +2665,7 @@ void dw1000_configure(struct dw1000_local *lp) {
 	}
 
 	/* DTUNE2 */
-	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, DIGITAL_BB_CONFIG[prfIndex][config->rx_pac]);
+	dw1000_write_32bit_reg(lp, DRX_CONF_ID, DRX_TUNE2_OFFSET, DIGITAL_BB_CONFIG[prf_index][config->rx_pac]);
 
 	/* DTUNE3 (SFD timeout) */
 	/* NOTE: Don't allow 0 - SFD timeout will always be enabled */
@@ -2745,27 +2675,27 @@ void dw1000_configure(struct dw1000_local *lp) {
 	dw1000_write_16bit_reg(lp, DRX_CONF_ID, DRX_SFDTOC_OFFSET, config->sfd_timeout);
 
 	/* Configure AGC parameters  */
-	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, agc_config.lo32);
-	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, agc_config.target[prfIndex]);
+	dw1000_write_32bit_reg(lp, AGC_CFG_STS_ID, 0xC, AGC_CONFIG.lo32);
+	dw1000_write_16bit_reg(lp, AGC_CFG_STS_ID, 0x4, AGC_CONFIG.target[prf_index]);
 
 	/* Set (non-standard) user SFD for improved performance */
 	if (config->ns_sfd) {
 		// Write non standard (DW) SFD length */
-		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, dw_ns_SFD_len[config->data_rate]);
-		nsSfd_result = 3;
-		useDWnsSFD = 1;
+		dw1000_write_8bit_reg(lp, USR_SFD_ID, 0x00, NS_SDF_LEN[config->data_rate]);
+		ns_sfd_result = 3;
+		use_dw_ns_sfd = 1;
 	}
-	regval =  (CHAN_CTRL_TX_CHAN_MASK & (chan << CHAN_CTRL_TX_CHAN_SHIFT)) | // Transmit Channel
+	reg_val =  (CHAN_CTRL_TX_CHAN_MASK & (chan << CHAN_CTRL_TX_CHAN_SHIFT)) | // Transmit Channel
 		(CHAN_CTRL_RX_CHAN_MASK & (chan << CHAN_CTRL_RX_CHAN_SHIFT)) | // Receive Channel
 		(CHAN_CTRL_RXFPRF_MASK & (config->prf << CHAN_CTRL_RXFPRF_SHIFT)) | // RX PRF
-		((CHAN_CTRL_TNSSFD | CHAN_CTRL_RNSSFD) & (nsSfd_result << CHAN_CTRL_TNSSFD_SHIFT)) | // nsSFD enable RX&TX
-		(CHAN_CTRL_DWSFD & (useDWnsSFD << CHAN_CTRL_DWSFD_SHIFT)) | // Use DW nsSFD
+		((CHAN_CTRL_TNSSFD | CHAN_CTRL_RNSSFD) & (ns_sfd_result << CHAN_CTRL_TNSSFD_SHIFT)) | // nsSFD enable RX&TX
+		(CHAN_CTRL_DWSFD & (use_dw_ns_sfd << CHAN_CTRL_DWSFD_SHIFT)) | // Use DW nsSFD
 		(CHAN_CTRL_TX_PCOD_MASK & (config->tx_code << CHAN_CTRL_TX_PCOD_SHIFT)) | // TX Preamble Code
 		(CHAN_CTRL_RX_PCOD_MASK & (config->rx_code << CHAN_CTRL_RX_PCOD_SHIFT)); // RX Preamble Code
 
-	dev_dbg(printdev(lp), "CHAN_CTRL:0x%x\n", regval);
+	dev_dbg(printdev(lp), "CHAN_CTRL:0x%x\n", reg_val);
 
-	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, regval);
+	dw1000_write_32bit_reg(lp, CHAN_CTRL_ID, 0, reg_val);
 
 	/* Set up TX Preamble Size, PRF and Data Rate  */
 	lp->pdata.tx_fctrl_reg = ((config->tx_preamble_length | config->prf) << TX_FCTRL_TXPRF_SHFT) | (config->data_rate << TX_FCTRL_TXBR_SHFT);
@@ -2774,11 +2704,14 @@ void dw1000_configure(struct dw1000_local *lp) {
 
 	dw1000_write_32bit_reg(lp, TX_FCTRL_ID, 0, lp->pdata.tx_fctrl_reg);
 
-	// The SFD transmit pattern is initialised by the DW1000 upon a user TX request, but (due to an IC issue) it is not done for an auto-ACK TX. The
-	// SYS_CTRL write below works around this issue, by simultaneously initiating and aborting a transmission, which correctly initialises the SFD
-	// after its configuration or reconfiguration.
-	// This issue is not documented at the time of writing this code. It should be in next release of DW1000 User Manual (v2.09, from July 2016).
-	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, SYS_CTRL_TXSTRT | SYS_CTRL_TRXOFF); // Request TX start and TRX off at the same time
+	/* The SFD transmit pattern is initialised by the DW1000 upon a user TX request, but (due to an IC issue) it is not done for an auto-ACK TX. The
+	   SYS_CTRL write below works around this issue, by simultaneously initiating and aborting a transmission, which correctly initialises the SFD
+	   after its configuration or reconfiguration.
+	   This issue is not documented at the time of writing this code. It should be in next release of DW1000 User Manual (v2.09, from July 2016).
+	*/
+	/* Request TX start and TRX off at the same time */
+	dw1000_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, 
+			      SYS_CTRL_TXSTRT | SYS_CTRL_TRXOFF);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2794,12 +2727,7 @@ static void
 _dw1000_set_spi_low(struct spi_device *spi)
 {
 	dev_dbg(&spi->dev, "%s\n", __func__);
-
-//	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
-
 	spi->max_speed_hz = DW1000_SPI_LOW;
-
-//	dev_dbg(&spi->dev, "low max_speed is %d Hz\n", spi->max_speed_hz);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2816,12 +2744,7 @@ static void
 _dw1000_set_spi_high(struct spi_device *spi)
 {
 	dev_dbg(&spi->dev, "%s\n", __func__);
-
-//	dev_dbg(&spi->dev, "current max_speed is %d Hz\n", spi->max_speed_hz);
-
 	spi->max_speed_hz = DW1000_SPI_HIGH;
-
-//	dev_dbg(&spi->dev, "high max_speed is %d Hz\n", spi->max_speed_hz);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -2948,36 +2871,14 @@ dw1000_detect_device(struct dw1000_local *lp)
 		goto not_supp;
 	}
 
-	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM |
-//			IEEE802154_HW_CSMA_PARAMS |
-//			IEEE802154_HW_FRAME_RETRIES |
-		IEEE802154_HW_AFILT |
+	lp->hw->flags = IEEE802154_HW_TX_OMIT_CKSUM | IEEE802154_HW_AFILT |
 			IEEE802154_HW_PROMISCUOUS;
 
-//	phy->flags = WPAN_PHY_FLAG_TXPOWER |
-//			     WPAN_PHY_FLAG_CCA_ED_LEVEL |
-//			     WPAN_PHY_FLAG_CCA_MODE;
-
-//	phy->supported.cca_modes = BIT(NL802154_CCA_ENERGY) |
-//		BIT(NL802154_CCA_CARRIER) | BIT(NL802154_CCA_ENERGY_CARRIER);
-//	phy->supported.cca_opts = BIT(NL802154_CCA_OPT_ENERGY_CARRIER_AND) |
-//		BIT(NL802154_CCA_OPT_ENERGY_CARRIER_OR);
-
-//	phy->cca.mode = NL802154_CCA_ENERGY;
 	chip = "dw1000";
-//	lp->hw->flags |= IEEE802154_HW_LBT;
 	phy->supported.channels[4] = 0xbe;
 	phy->current_channel = 2;
 	phy->current_page = 4;
 	phy->symbol_duration = 25;
-//	phy->supported.lbt = NL802154_SUPPORTED_BOOL_BOTH;
-//	phy->supported.tx_powers = dw1000_powers;
-//	phy->supported.tx_powers_size = ARRAY_SIZE(dw1000_powers);
-//	phy->supported.cca_ed_levels = dw1000_ed_levels;
-//	phy->supported.cca_ed_levels_size = ARRAY_SIZE(dw1000_ed_levels);
-
-//	phy->cca_ed_level = lp->hw->phy->supported.cca_ed_levels[7];
-//	phy->transmit_power = lp->hw->phy->supported.tx_powers[0];
 
 not_supp:
 	dev_info(&lp->spi->dev, "Detected %s chip id 0x%x\n", chip, dev_id);
