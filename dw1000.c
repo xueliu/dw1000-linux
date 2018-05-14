@@ -428,11 +428,11 @@ struct dw1000_local {
 	struct sk_buff *tx_skb;
 
 	/* async spi write */
-	struct spi_message reg_msg;
-	u8 reg_addr[3];
-	struct spi_transfer reg_addr_xfer;
-	u32 reg_val;
-	struct spi_transfer reg_val_xfer;
+	struct spi_message async_write_msg;
+	u8 async_write_header[3];
+	struct spi_transfer async_write_header_xfer;
+	u32 async_write_data;
+	struct spi_transfer async_write_data_xfer;
 
 	/* async spi read */
 	struct spi_message async_read_msg;
@@ -760,34 +760,34 @@ dw1000_async_write_reg(struct dw1000_local *lp, u16 addr, u16 index, u32 length,
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	lp->reg_val_xfer.len = length;
-	lp->reg_val_xfer.tx_buf = data;
+	lp->async_write_data_xfer.len = length;
+	lp->async_write_data_xfer.tx_buf = data;
 
 	// Write message header selecting WRITE operation and addresses as appropriate (this is one to three bytes long)
 	// For index of 0, no sub-index is required
 	if (index == 0) {
 		// Bit-7 zero is WRITE operation, bit-6 zero=NO sub-addressing, bits 5-0 is reg file id
-		lp->reg_addr[cnt++] = REG_WRITE | (u8)addr;
+		lp->async_write_header[cnt++] = REG_WRITE | (u8)addr;
 	} else {
 		// Bit-7 is WRITE operation, bit-6 one=sub-address follows, bits 5-0 is reg file id
-		lp->reg_addr[cnt++] = (u8)(REG_WRITE | SUB_INDEX | addr);
+		lp->async_write_header[cnt++] = (u8)(REG_WRITE | SUB_INDEX | addr);
 
 		// For non-zero index < 127, just a single sub-index byte is required
 		if (index <= 127) {
 			// Bit-7 zero means no extension, bits 6-0 is index.
-			lp->reg_addr[cnt++] = (u8)index;
+			lp->async_write_header[cnt++] = (u8)index;
 		} else {
 			// Bit-7 one means extended index, bits 6-0 is low seven bits of index.
-			lp->reg_addr[cnt++] = REG_WRITE | (u8)(index);
+			lp->async_write_header[cnt++] = REG_WRITE | (u8)(index);
 			// 8-bit value = high eight bits of index.
-			lp->reg_addr[cnt++] =  (u8)(index >> 7);
+			lp->async_write_header[cnt++] =  (u8)(index >> 7);
 		}
 	}
 
-	lp->reg_addr_xfer.len = cnt;
-	lp->reg_msg.complete = complete;
+	lp->async_write_header_xfer.len = cnt;
+	lp->async_write_msg.complete = complete;
 
-	return spi_async(lp->spi, &lp->reg_msg);
+	return spi_async(lp->spi, &lp->async_write_msg);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -1286,8 +1286,8 @@ dw1000_irq_read_rx_buf_complete(void *context)
 //  enable_irq(lp->spi->irq);
 
 	/* Enable rx */
-	lp->reg_val = SYS_CTRL_RXENAB;
-	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, NULL);
+	lp->async_write_data = SYS_CTRL_RXENAB;
+	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->async_write_data, NULL);
 	if (ret)
 		dev_err(printdev(lp), "failed to enable rx\n");
 
@@ -1300,8 +1300,8 @@ dw1000_irq_read_rx_buf_complete(void *context)
 //  if ((status & SYS_STATUS_AAT) && ((lp->pdata.cb_data.fctrl[0] & FCTRL_ACK_REQ_MASK) == 0)) {
 		/* Clear AAT status bit in register */
 //		dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_AAT);
-//  	lp->reg_val = SYS_STATUS_AAT;
-//  	dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, NULL);
+//  	lp->async_write_data = SYS_STATUS_AAT;
+//  	dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->async_write_data, NULL);
 //
 //  	/* Clear AAT status bit in callback data register copy */
 //  	lp->pdata.cb_data.status &= ~SYS_STATUS_AAT;
@@ -1383,8 +1383,8 @@ dw1000_set_rx_reset_complete(void *context)
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
 	/* Clear RX reset */
-	lp->reg_val = PMSC_CTRL0_RESET_CLEAR;
-	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, (u8 *)&lp->reg_val, dw1000_clear_rx_reset_complete);
+	lp->async_write_data = PMSC_CTRL0_RESET_CLEAR;
+	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, (u8 *)&lp->async_write_data, dw1000_clear_rx_reset_complete);
 	if (ret)
 		dev_err(printdev(lp), "failed to clear rx reset\n");
 
@@ -1414,8 +1414,8 @@ dw1000_clear_tx_status_complete(void *context)
 //
 //  	/* Reset RX in case we were late and a frame was already being received */
 //  	/* Set RX reset */
-//  	lp->reg_val = PMSC_CTRL0_RESET_RX;
-//  	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET,  (u8 *)&lp->reg_val, dw1000_set_rx_reset_complete);
+//  	lp->async_write_data = PMSC_CTRL0_RESET_RX;
+//  	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET,  (u8 *)&lp->async_write_data, dw1000_set_rx_reset_complete);
 //  	if (ret)
 //  		dev_err(printdev(lp), "failed to set rx reset\n");
 //  } else {
@@ -1425,8 +1425,8 @@ dw1000_clear_tx_status_complete(void *context)
 //      enable_irq(lp->spi->irq);
 
 	/* Enable rx */
-	lp->reg_val = SYS_CTRL_RXENAB;
-	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->reg_val, NULL);
+	lp->async_write_data = SYS_CTRL_RXENAB;
+	ret = dw1000_async_write_16bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u16 *)&lp->async_write_data, NULL);
 	if (ret)
 		dev_err(printdev(lp), "failed to enable rx\n");
 //  }
@@ -1446,8 +1446,8 @@ dw1000_clear_rx_err_complete(void *context)
 	// See section "RX Message timestamp" in DW1000 User Manual.
 
 	/* Set RX reset */
-	lp->reg_val = PMSC_CTRL0_RESET_RX;
-	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, (u8 *)&lp->reg_val, dw1000_set_rx_reset_complete);
+	lp->async_write_data = PMSC_CTRL0_RESET_RX;
+	ret = dw1000_async_write_8bit_reg(lp, PMSC_ID, PMSC_CTRL0_SOFTRESET_OFFSET, (u8 *)&lp->async_write_data, dw1000_set_rx_reset_complete);
 
 	if (ret)
 		dev_err(printdev(lp), "failed to set rx reset\n");
@@ -1472,8 +1472,8 @@ dw1000_irq_read_status_complete(void *context)
 		dev_dbg(printdev(lp), "RX is done\n");
 		/* Clear all receive status bits */
 
-		lp->reg_val = SYS_STATUS_ALL_RX_GOOD;
-		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_rx_status_complete);
+		lp->async_write_data = SYS_STATUS_ALL_RX_GOOD;
+		ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->async_write_data, dw1000_clear_rx_status_complete);
 		if (ret)
 			dev_err(printdev(lp), "failed to clear all receive status bits\n");
 	}
@@ -1483,8 +1483,8 @@ dw1000_irq_read_status_complete(void *context)
 		if (lp->is_tx) {
 			dev_dbg(printdev(lp), "TX is done\n");
 			/* Clear TX event bits */
-			lp->reg_val = SYS_STATUS_ALL_TX;
-			ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_tx_status_complete);
+			lp->async_write_data = SYS_STATUS_ALL_TX;
+			ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->async_write_data, dw1000_clear_tx_status_complete);
 			if (ret)
 				dev_err(printdev(lp), "failed to clear TX event bits\n");
 		} else {
@@ -1516,8 +1516,8 @@ dw1000_irq_read_status_complete(void *context)
 //      lp->pdata.wait_for_resp = 0;
 //
 //      /* Clear RX error event bits */
-//      lp->reg_val = SYS_STATUS_ALL_RX_ERR;
-//      ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->reg_val, dw1000_clear_rx_err_complete);
+//      lp->async_write_data = SYS_STATUS_ALL_RX_ERR;
+//      ret = dw1000_async_write_32bit_reg(lp, SYS_STATUS_ID, 0, &lp->async_write_data, dw1000_clear_rx_err_complete);
 //      if (ret)
 //          dev_err(printdev(lp), "failed to clear rx error event bits\n");
 //  }
@@ -1560,8 +1560,8 @@ dw1000_set_tx_fctrl_complete(void *context)
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	lp->reg_val = SYS_CTRL_TXSTRT;
-	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8 *)&lp->reg_val, NULL);
+	lp->async_write_data = SYS_CTRL_TXSTRT;
+	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8 *)&lp->async_write_data, NULL);
 	if (ret)
 		dev_err(printdev(lp), "failed to start tx\n");
 }
@@ -1580,13 +1580,13 @@ dw1000_write_tx_buff_complete(void *context)
 	len = len + 2;
 
 	/* Zero offset in TX buffer, no ranging. */
-	lp->reg_val = lp->pdata.tx_fctrl_reg | len | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
+	lp->async_write_data = lp->pdata.tx_fctrl_reg | len | (txBufferOffset << TX_FCTRL_TXBOFFS_SHFT) | (ranging << TX_FCTRL_TR_SHFT);
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->reg_val);
+	dev_dbg(printdev(lp), "TX_FCTRL:0x%x\n", lp->async_write_data);
 
-	ret = dw1000_async_write_32bit_reg(lp, TX_FCTRL_ID, 0, &lp->reg_val, dw1000_set_tx_fctrl_complete);
+	ret = dw1000_async_write_32bit_reg(lp, TX_FCTRL_ID, 0, &lp->async_write_data, dw1000_set_tx_fctrl_complete);
 	if (ret)
 		dev_err(printdev(lp), "failed to set tx fctrl\n");
 
@@ -1637,9 +1637,9 @@ dw1000_xmit(struct ieee802154_hw *hw, struct sk_buff *skb)
 	print_hex_dump_debug("dw1000 tx: ", DUMP_PREFIX_OFFSET, 16, 1,
 			     skb->data, skb->len, 0);
 
-	lp->reg_val = SYS_CTRL_TRXOFF;
+	lp->async_write_data = SYS_CTRL_TRXOFF;
 	/* Turn off rx at first */
-	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8 *)&lp->reg_val, dw1000_set_trxoff_complete);
+	ret = dw1000_async_write_8bit_reg(lp, SYS_CTRL_ID, SYS_CTRL_OFFSET, (u8 *)&lp->async_write_data, dw1000_set_trxoff_complete);
 	if (ret)
 		dev_err(printdev(lp), "failed to turn off rx\n");
 
@@ -2134,13 +2134,13 @@ static const struct ieee802154_ops dw1000_ops = {
 static void
 dw1000_setup_reg_messages(struct dw1000_local *lp)
 {
-	spi_message_init(&lp->reg_msg);
-	lp->reg_msg.context = lp;
+	spi_message_init(&lp->async_write_msg);
+	lp->async_write_msg.context = lp;
 
-	lp->reg_addr_xfer.tx_buf = lp->reg_addr;
+	lp->async_write_header_xfer.tx_buf = lp->async_write_header;
 
-	spi_message_add_tail(&lp->reg_addr_xfer, &lp->reg_msg);
-	spi_message_add_tail(&lp->reg_val_xfer, &lp->reg_msg);
+	spi_message_add_tail(&lp->async_write_header_xfer, &lp->async_write_msg);
+	spi_message_add_tail(&lp->async_write_data_xfer, &lp->async_write_msg);
 }
 
 static void
@@ -2302,11 +2302,11 @@ dw1000_soft_reset(struct dw1000_local *lp)
 void dw1000_set_xtal_trim(struct dw1000_local *lp, u8 value)
 {
 	// The 3 MSb in this 8-bit register must be kept to 0b011 to avoid any malfunction.
-	u8 reg_val = (3 << 5) | (value & FS_XTALT_MASK);
+	u8 async_write_data = (3 << 5) | (value & FS_XTALT_MASK);
 
 	dev_dbg(printdev(lp), "%s\n", __func__);
 
-	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_XTALT_OFFSET, reg_val);
+	dw1000_write_8bit_reg(lp, FS_CTRL_ID, FS_XTALT_OFFSET, async_write_data);
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
